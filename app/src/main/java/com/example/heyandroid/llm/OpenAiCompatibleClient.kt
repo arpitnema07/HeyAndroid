@@ -12,7 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Talks to any OpenAI-compatible `/chat/completions` endpoint (Groq today).
+ * Talks to any OpenAI-compatible `/chat/completions` endpoint (Groq, Gemini).
  * Uses HttpURLConnection so the app needs no HTTP dependency.
  *
  * Requests are serialised and spaced out, and `429`/`5xx` answers are retried

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -526,7 +527,10 @@ private fun AssistantPage(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 LlmProvider.entries.forEach { entry ->
                     ProviderChip(
                         label = entry.displayName,
@@ -539,13 +543,6 @@ private fun AssistantPage(onBack: () -> Unit) {
                         }
                     )
                 }
-                ProviderChip(
-                    label = "More soon",
-                    selected = false,
-                    accent = accent,
-                    enabled = false,
-                    onClick = {}
-                )
             }
 
             Text(

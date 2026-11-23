@@ -40,6 +40,40 @@ enum class LlmProvider(
         keyHint = "gsk_…",
         keyUrl = "console.groq.com/keys",
         freeTierNote = "Free plan · 30 requests/min · 1,000/day per model"
+    ),
+
+    /**
+     * Google's OpenAI-compatible endpoint. The free tier is generous but its
+     * limits are per project and shown in AI Studio rather than in the docs,
+     * and only the Flash line is free - the Pro models have no free quota.
+     */
+    GEMINI(
+        id = "gemini",
+        displayName = "Gemini",
+        baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
+        freeModels = listOf(
+            LlmModel(
+                "gemini-3.8-flash",
+                "Gemini 3.8 Flash",
+                "Current flagship · tools, 1M context, reads images",
+                supportsImages = true
+            ),
+            LlmModel(
+                "gemini-3.5-flash",
+                "Gemini 3.5 Flash",
+                "Stable · tools and images",
+                supportsImages = true
+            ),
+            LlmModel(
+                "gemini-3.5-flash-lite",
+                "Gemini 3.5 Flash-Lite",
+                "Fastest, highest free quota",
+                supportsImages = true
+            )
+        ),
+        keyHint = "AIza…",
+        keyUrl = "aistudio.google.com/apikey",
+        freeTierNote = "Free tier · rate limits are per project, shown in Google AI Studio"
     );
 
     val defaultModel: String get() = freeModels.first().id
