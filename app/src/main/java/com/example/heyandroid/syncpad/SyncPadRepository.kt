@@ -35,15 +35,23 @@ class SyncPadRepository private constructor(context: Context) {
         return result
     }
 
-    suspend fun addText(content: String): Result<SyncPadClip> {
-        val result = client.addText(content)
+    suspend fun addText(
+        content: String,
+        tags: List<String> = emptyList()
+    ): Result<SyncPadClip> {
+        val result = client.addText(content, tags)
         result.getOrNull()?.let { cache.prepend(it) }
         if (result.isSuccess) SyncPadWidgetProvider.updateAll(appContext)
         return result
     }
 
-    suspend fun upload(fileName: String, mimeType: String, bytes: ByteArray): Result<SyncPadClip> {
-        val result = client.upload(fileName, mimeType, bytes)
+    suspend fun upload(
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        tags: List<String> = emptyList()
+    ): Result<SyncPadClip> {
+        val result = client.upload(fileName, mimeType, bytes, tags)
         result.getOrNull()?.let { cache.prepend(it) }
         if (result.isSuccess) SyncPadWidgetProvider.updateAll(appContext)
         return result

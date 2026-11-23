@@ -39,15 +39,29 @@ class SyncPadClient(private val settings: SyncPadSettings) {
         }
     }
 
-    suspend fun addText(content: String): Result<SyncPadClip> = withContext(Dispatchers.IO) {
+    suspend fun addText(
+        content: String,
+        tags: List<String> = emptyList()
+    ): Result<SyncPadClip> = withContext(Dispatchers.IO) {
         runCatching {
-            val payload = JSONObject().put("content", content).toString().toByteArray()
-            val body = request("POST", "/api/integrations/clips", payload, "application/json").body
+            val payload = JSONObject().put("content", content)
+            if (tags.isNotEmpty()) payload.put("tags", JSONArray(tags))
+            val body = request(
+                "POST",
+                "/api/integrations/clips",
+                payload.toString().toByteArray(),
+                "application/json"
+            ).body
             SyncPadClip.fromJson(JSONObject(body).getJSONObject("clip"))
         }
     }
 
-    suspend fun upload(fileName: String, mimeType: String, bytes: ByteArray): Result<SyncPadClip> =
+    suspend fun upload(
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        tags: List<String> = emptyList()
+    ): Result<SyncPadClip> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val boundary = "----heyandroid${UUID.randomUUID()}"
@@ -57,7 +71,13 @@ class SyncPadClient(private val settings: SyncPadSettings) {
                     "Content-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\n" +
                     "Content-Type: $type\r\n\r\n"
                 val tail = "\r\n--$boundary--\r\n"
-                val body = head.toByteArray() + bytes + tail.toByteArray()
+                // Tags ride in a second text part, so a file and its tags are one request.
+                val tagsPart = if (tags.isEmpty()) "" else
+                    "\r\n--$boundary\r\n" +
+                        "Content-Disposition: form-data; name=\"tags\"\r\n\r\n" +
+                        JSONArray(tags).toString()
+                val body = head.toByteArray() + bytes +
+                    tagsPart.toByteArray() + tail.toByteArray()
                 val response = request(
                     method = "POST",
                     path = "/api/integrations/clips/upload",

@@ -20,7 +20,8 @@ data class SyncPadClip(
     val mimeType: String?,
     val hasFile: Boolean,
     val isPinned: Boolean,
-    val createdAt: Long
+    val createdAt: Long,
+    val tags: List<String> = emptyList()
 ) {
     val isText: Boolean get() = type == "text" || type == "code" || type == "url"
 
@@ -58,6 +59,7 @@ data class SyncPadClip(
         .put("has_file", hasFile)
         .put("is_pinned", isPinned)
         .put("created_at", createdAt)
+        .put("tags", JSONArray(tags))
 
     companion object {
         fun fromJson(json: JSONObject): SyncPadClip = SyncPadClip(
@@ -71,7 +73,11 @@ data class SyncPadClip(
             mimeType = json.stringOrNull("mime_type"),
             hasFile = json.optBoolean("has_file", false),
             isPinned = json.optBoolean("is_pinned", false),
-            createdAt = parseTime(json.optString("created_at"))
+            createdAt = parseTime(json.optString("created_at")),
+            tags = json.optJSONArray("tags")?.let { array ->
+                (0 until array.length())
+                    .mapNotNull { index -> array.optString(index).takeIf(String::isNotBlank) }
+            } ?: emptyList()
         )
 
         fun encode(clips: List<SyncPadClip>): String {

@@ -26,11 +26,16 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +62,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +83,9 @@ import kotlinx.coroutines.withContext
 
 /** How often the open screen checks for clips made elsewhere. */
 private const val POLL_MS = 5_000L
+
+/** Tags per clip, matching what the web composer accepts. */
+private const val MAX_TAGS = 5
 
 private data class PickedFile(val name: String, val mime: String, val bytes: ByteArray)
 
@@ -109,6 +118,9 @@ fun SyncPadScreen(
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var syncedAt by remember { mutableStateOf(0L) }
+    var tags by remember { mutableStateOf(emptyList<String>()) }
+    var tagDraft by remember { mutableStateOf("") }
+    var activeTag by remember { mutableStateOf<String?>(null) }
 
     fun applyRefresh() {
         scope.launch {
@@ -133,9 +145,11 @@ fun SyncPadScreen(
             if (picked == null) {
                 error = "Couldn't read that file."
             } else {
-                repository.upload(picked.name, picked.mime, picked.bytes).fold(
+                repository.upload(picked.name, picked.mime, picked.bytes, tags).fold(
                     onSuccess = {
                         clips = listOf(it) + clips
+                        tags = emptyList()
+                        tagDraft = ""
                         error = null
                         syncedAt = System.currentTimeMillis()
                     },
@@ -183,10 +197,12 @@ fun SyncPadScreen(
         if (text.isEmpty() || busy) return
         scope.launch {
             busy = true
-            repository.addText(text).fold(
+            repository.addText(text, tags).fold(
                 onSuccess = {
                     clips = listOf(it) + clips
                     draft = ""
+                    tags = emptyList()
+                    tagDraft = ""
                     error = null
                     syncedAt = System.currentTimeMillis()
                 },
@@ -194,6 +210,15 @@ fun SyncPadScreen(
             )
             busy = false
         }
+    }
+
+    /** Adds the tag being typed, the way pressing Enter in the web composer does. */
+    fun commitTag() {
+        val clean = tagDraft.trim().removePrefix("#").take(24)
+        if (clean.isNotEmpty() && tags.size < MAX_TAGS && tags.none { it.equals(clean, true) }) {
+            tags = tags + clean
+        }
+        tagDraft = ""
     }
 
     Column(
@@ -261,6 +286,11 @@ fun SyncPadScreen(
             onDraftChange = { draft = it },
             busy = busy,
             accent = accent,
+            tags = tags,
+            tagDraft = tagDraft,
+            onTagDraftChange = { tagDraft = it },
+            onAddTag = { commitTag() },
+            onRemoveTag = { tag -> tags = tags.filterNot { it == tag } },
             onAdd = { addDraft() },
             onAttach = { picker.launch("*/*") },
             onPaste = {
@@ -283,6 +313,19 @@ fun SyncPadScreen(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+
+        val allTags = clips.flatMap { it.tags }.distinct().sorted()
+        if (allTags.isNotEmpty()) {
+            TagFilterRow(
+                tags = allTags,
+                active = activeTag,
+                accent = accent,
+                onSelect = { activeTag = it }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        val visible = activeTag?.let { tag -> clips.filter { it.tags.contains(tag) } } ?: clips
 
         if (clips.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -315,13 +358,21 @@ fun SyncPadScreen(
                     )
                 }
             }
+        } else if (visible.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Nothing tagged #$activeTag",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary
+                )
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(clips, key = { it.id }) { clip ->
+                items(visible, key = { it.id }) { clip ->
                     ClipCard(
                         clip = clip,
                         accent = accent,
@@ -402,6 +453,11 @@ private fun Composer(
     onDraftChange: (String) -> Unit,
     busy: Boolean,
     accent: Color,
+    tags: List<String>,
+    tagDraft: String,
+    onTagDraftChange: (String) -> Unit,
+    onAddTag: () -> Unit,
+    onRemoveTag: (String) -> Unit,
     onAdd: () -> Unit,
     onAttach: () -> Unit,
     onPaste: () -> Unit
@@ -489,6 +545,131 @@ private fun Composer(
                 }
             }
         }
+
+        TagEditor(
+            tags = tags,
+            draft = tagDraft,
+            onDraftChange = onTagDraftChange,
+            accent = accent,
+            onAdd = onAddTag,
+            onRemove = onRemoveTag
+        )
+    }
+}
+
+/** The composer's tag chips plus the field that adds one. */
+@Composable
+private fun TagEditor(
+    tags: List<String>,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    accent: Color,
+    onAdd: () -> Unit,
+    onRemove: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tags.forEach { tag ->
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.16f))
+                        .clickable { onRemove(tag) }
+                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "#$tag",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = "Remove tag $tag",
+                        tint = accent,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
+
+            if (tags.size < MAX_TAGS) {
+                Box(modifier = Modifier.width(108.dp)) {
+                    if (draft.isEmpty()) {
+                        Text(
+                            text = "Add tag…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AppColors.TextTertiary
+                        )
+                    }
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = onDraftChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.labelSmall.copy(
+                            color = AppColors.TextPrimary
+                        ),
+                        cursorBrush = SolidColor(accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { onAdd() })
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Chips above the list: one "All" and one per tag, with the active filter filled. */
+@Composable
+private fun TagFilterRow(
+    tags: List<String>,
+    active: String?,
+    accent: Color,
+    onSelect: (String?) -> Unit
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        item { FilterChip(label = "All", selected = active == null, accent = accent) { onSelect(null) } }
+        items(tags, key = { it }) { tag ->
+            FilterChip(
+                label = "#$tag",
+                selected = active == tag,
+                accent = accent
+            ) { onSelect(if (active == tag) null else tag) }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) accent.copy(alpha = 0.22f) else AppColors.SurfaceRaised)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) accent else AppColors.TextSecondary
+        )
     }
 }
 
@@ -632,6 +813,31 @@ private fun ClipCard(
                 maxLines = 8,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+
+        if (clip.tags.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                clip.tags.take(MAX_TAGS).forEach { tag ->
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(AppColors.SurfaceRaised)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "#$tag",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AppColors.TextSecondary,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
         }
 
         Row(
