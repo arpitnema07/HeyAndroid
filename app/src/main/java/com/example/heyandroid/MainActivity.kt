@@ -94,6 +94,11 @@ class MainActivity : ComponentActivity() {
         }
 
         val initialTab = intent?.getStringExtra(EXTRA_TAB)
+        // The widget's paste button asks for the clipboard content to land in
+        // the composer. It is a one-shot: drop it so a rotation does not paste
+        // again.
+        val pasteClipboard = intent?.getBooleanExtra(EXTRA_PASTE_CLIPBOARD, false) == true
+        intent?.removeExtra(EXTRA_PASTE_CLIPBOARD)
 
         setContent {
             HeyAndroidTheme(darkTheme = true) {
@@ -103,14 +108,27 @@ class MainActivity : ComponentActivity() {
                     messageDao = database.messageDao(),
                     captureDao = database.captureDao(),
                     turnLogDao = database.turnLogDao(),
-                    initialTab = initialTab
+                    initialTab = initialTab,
+                    pasteClipboard = pasteClipboard
                 )
             }
         }
     }
 
+    /**
+     * Widget taps land here when the app is already open (the intents are
+     * SINGLE_TOP). Recreating is what re-reads the intent, so the requested tab
+     * opens and a pending paste still reaches the SyncPad composer.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
+    }
+
     companion object {
         const val EXTRA_TAB = "extra_tab"
+        const val EXTRA_PASTE_CLIPBOARD = "paste_clipboard"
         const val TAB_HISTORY = "history"
         const val TAB_SYNCPAD = "syncpad"
         const val EXTRA_BUILD_BRIEF = "build_brief"

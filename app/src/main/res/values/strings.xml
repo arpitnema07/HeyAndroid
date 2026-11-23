@@ -7,4 +7,8 @@
     <string name="widget_syncpad_description">Recent SyncPad clips</string>
     <string name="widget_syncpad_empty">No clips yet.\nTap refresh to sync.</string>
     <string name="widget_syncpad_refresh">Refresh clips</string>
+    <string name="widget_syncpad_copy">Copy clip</string>
+    <string name="widget_syncpad_copied">Copied to clipboard</string>
+    <string name="widget_syncpad_nothing_to_copy">Nothing to copy</string>
+    <string name="widget_syncpad_paste">Paste clipboard into SyncPad</string>
 </resources>

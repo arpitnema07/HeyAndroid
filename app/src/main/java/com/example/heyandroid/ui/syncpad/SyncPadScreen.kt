@@ -86,7 +86,11 @@ private data class PickedFile(val name: String, val mime: String, val bytes: Byt
  * refresh. The refresh button is there for when the user does not want to wait.
  */
 @Composable
-fun SyncPadScreen(accent: Color, modifier: Modifier = Modifier) {
+fun SyncPadScreen(
+    accent: Color,
+    modifier: Modifier = Modifier,
+    pasteClipboard: Boolean = false
+) {
     val context = LocalContext.current
     val repository = remember { SyncPadRepository.getInstance(context) }
     val settings = repository.settings
@@ -137,6 +141,19 @@ fun SyncPadScreen(accent: Color, modifier: Modifier = Modifier) {
                 )
             }
             busy = false
+        }
+    }
+
+    // The widget's paste button opens this screen with a request to put the
+    // system clipboard into the composer. Reading the clipboard needs the app on
+    // screen, which is exactly why the widget cannot do it on its own.
+    LaunchedEffect(pasteClipboard, configured) {
+        if (!pasteClipboard || !configured) return@LaunchedEffect
+        val text = clipboard.getText()?.text.orEmpty()
+        if (text.isBlank()) {
+            Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+        } else {
+            draft = text
         }
     }
 

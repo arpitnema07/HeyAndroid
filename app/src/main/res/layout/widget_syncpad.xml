@@ -30,6 +30,19 @@
         android:padding="7dp"
         android:src="@drawable/ic_refresh" />
 
+    <ImageButton
+        android:id="@+id/widget_syncpad_paste"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_alignParentTop="true"
+        android:layout_centerVertical="true"
+        android:layout_marginEnd="6dp"
+        android:layout_toStartOf="@id/widget_syncpad_refresh"
+        android:background="@drawable/widget_refresh_bg"
+        android:contentDescription="@string/widget_syncpad_paste"
+        android:padding="7dp"
+        android:src="@drawable/ic_paste" />
+
     <LinearLayout
         android:id="@+id/widget_syncpad_clips"
         android:layout_width="match_parent"

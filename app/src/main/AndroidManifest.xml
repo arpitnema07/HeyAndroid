@@ -169,8 +169,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- Recent SyncPad clips. The refresh action goes to a non-exported
-             receiver, so only the widget can trigger a SyncPad request. -->
+        <!-- Recent SyncPad clips. Refresh and copy go to a non-exported receiver,
+             so only the widget can trigger a SyncPad request or clipboard write. -->
         <receiver
             android:name=".widget.SyncPadWidgetProvider"
             android:exported="true"
@@ -184,10 +184,11 @@
         </receiver>
 
         <receiver
-            android:name=".widget.SyncPadWidgetRefreshReceiver"
+            android:name=".widget.SyncPadWidgetActionReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.heyandroid.action.SYNCPAD_REFRESH" />
+                <action android:name="com.example.heyandroid.action.SYNCPAD_COPY" />
             </intent-filter>
         </receiver>
 

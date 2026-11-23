@@ -76,7 +76,8 @@ fun HomeScreen(
     messageDao: MessageDao,
     captureDao: CaptureDao,
     turnLogDao: TurnLogDao,
-    initialTab: String? = null
+    initialTab: String? = null,
+    pasteClipboard: Boolean = false
 ) {
     val conversations by conversationDao.observeAll().collectAsState(initial = emptyList())
     val captures by captureDao.getAllCaptures().collectAsState(initial = emptyList())
@@ -132,7 +133,10 @@ fun HomeScreen(
 
                     HomeTab.Brief -> BriefPage(embedded = true)
 
-                    HomeTab.SyncPad -> SyncPadScreen(accent = AppColors.Accent)
+                    HomeTab.SyncPad -> SyncPadScreen(
+                        accent = AppColors.Accent,
+                        pasteClipboard = pasteClipboard
+                    )
 
                     HomeTab.Settings -> SettingsScreen(
                         conversations = conversations,
