@@ -136,21 +136,16 @@ private fun WidgetContent(all: List<SyncPadClip>) {
 @Composable
 private fun Header() {
     val context = LocalContext.current
-    val openApp = actionStartActivity(
-        Intent(context, MainActivity::class.java).apply {
-            putExtra(MainActivity.EXTRA_TAB, MainActivity.TAB_SYNCPAD)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-    )
+    // Widgets get no swipe gestures, so the header itself is the pull-to-refresh
+    // target: the largest area that is not already a clip row.
+    val refresh = actionRunCallback<RefreshClipsAction>()
 
     Row(
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(
-            modifier = GlanceModifier.defaultWeight().clickable(openApp),
+            modifier = GlanceModifier.defaultWeight().clickable(refresh),
             horizontalAlignment = Alignment.Start
         ) {
             Text(
@@ -185,7 +180,7 @@ private fun Header() {
         IconButton(
             icon = R.drawable.ic_refresh,
             description = context.getString(R.string.widget_syncpad_refresh),
-            onClick = actionRunCallback<RefreshClipsAction>()
+            onClick = refresh
         )
     }
 }
