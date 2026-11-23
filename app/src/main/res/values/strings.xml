@@ -6,6 +6,7 @@
     <string name="widget_syncpad_title">SyncPad clips</string>
     <string name="widget_syncpad_subtitle">Tap a clip to copy it</string>
     <string name="widget_syncpad_hint">Tap the paste button to send what is on your clipboard.</string>
+    <string name="brief_ready">Brief updated</string>
     <string name="widget_syncpad_description">Recent SyncPad clips</string>
     <string name="widget_syncpad_empty">No clips yet.\nTap refresh to sync.</string>
     <string name="widget_syncpad_refresh">Refresh clips</string>

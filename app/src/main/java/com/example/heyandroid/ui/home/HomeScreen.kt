@@ -59,15 +59,15 @@ import java.util.Locale
 
 private enum class HomeTab(val label: String, val icon: Int) {
     Memory("Memory", R.drawable.ic_kind_fact),
-    Brief("Brief", R.drawable.ic_document),
     SyncPad("SyncPad", R.drawable.ic_copy),
+    Brief("Brief", R.drawable.ic_document),
     Settings("Settings", R.drawable.ic_settings)
 }
 
 /**
- * Main screen: the memory store, the generated brief page, and settings - the
- * three places you go, in a bottom bar. Conversation history and the capture log
- * now sit in the settings menu.
+ * Main screen: the memory store, SyncPad, the generated brief page and settings,
+ * in a bottom bar. Conversation history and the capture log sit in the settings
+ * menu.
  */
 @Composable
 fun HomeScreen(

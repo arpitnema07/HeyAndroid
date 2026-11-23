@@ -33,7 +33,7 @@ class ToolRouter @Inject constructor(private val registry: ToolRegistry) {
     fun all(): List<LlmToolSpec> = registry.specs()
 
     private companion object {
-        const val MAX_TOOLS = 10
+        const val MAX_TOOLS = 16
 
         /** Always sent: the app's core job, plus the model's escape hatch when unsure. */
         val CORE = listOf(
@@ -66,6 +66,15 @@ class ToolRouter @Inject constructor(private val registry: ToolRegistry) {
                 "web search", "search the web", "search online", "look online", "google",
                 "online", "latest", "news", "current", "today's", "todays", "price of",
                 "how much is", "who won", "weather", "stock", "release date", "score"
+            ),
+            "syncpad_add_text" to listOf(
+                "syncpad", "clipboard", "clip this", "snippet", "copy this to", "send this to sync"
+            ),
+            "syncpad_add_screenshot" to listOf(
+                "syncpad", "screenshot", "screen shot", "send this screenshot"
+            ),
+            "syncpad_add_image" to listOf(
+                "syncpad", "image", "picture", "photo", "screenshot"
             ),
             "call_custom_api" to listOf("api", "endpoint", "webhook", "custom tool", "call my"),
             "edit_note" to listOf(

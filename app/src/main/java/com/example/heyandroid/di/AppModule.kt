@@ -21,6 +21,9 @@ import com.example.heyandroid.tools.McpTool
 import com.example.heyandroid.tools.SaveMemoryTool
 import com.example.heyandroid.tools.SearchMemoryTool
 import com.example.heyandroid.tools.StartCallTool
+import com.example.heyandroid.tools.SyncPadImageTool
+import com.example.heyandroid.tools.SyncPadScreenshotTool
+import com.example.heyandroid.tools.SyncPadTextTool
 import com.example.heyandroid.tools.Tool
 import com.example.heyandroid.tools.ToolRegistry
 import com.example.heyandroid.tools.UpdateMemoryTool
@@ -96,7 +99,10 @@ object AppModule {
         clock: ClockTool,
         callCustomApi: CallCustomApiTool,
         webSearch: WebSearchTool,
-        mcp: McpTool
+        mcp: McpTool,
+        syncPadText: SyncPadTextTool,
+        syncPadScreenshot: SyncPadScreenshotTool,
+        syncPadImage: SyncPadImageTool
     ): ToolRegistry {
         val tools: List<Tool> = listOf(
             saveMemory,
@@ -104,6 +110,9 @@ object AppModule {
             listMemories,
             updateMemory,
             webSearch,
+            syncPadText,
+            syncPadScreenshot,
+            syncPadImage,
             editNote,
             startCall,
             calendarEvent,

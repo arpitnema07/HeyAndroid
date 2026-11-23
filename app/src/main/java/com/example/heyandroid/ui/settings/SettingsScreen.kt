@@ -76,7 +76,6 @@ import com.example.heyandroid.ui.components.AppCard
 import com.example.heyandroid.ui.history.ConversationTranscript
 import com.example.heyandroid.ui.history.HistoryList
 import com.example.heyandroid.ui.log.LogScreen
-import com.example.heyandroid.widget.BriefWorker
 import com.example.heyandroid.widget.SyncPadSyncWorker
 import com.example.heyandroid.widget.SyncPadWidgetProvider
 import kotlinx.coroutines.launch
@@ -93,7 +92,6 @@ enum class SettingsPage(val title: String, val subtitle: String) {
     Connectors("Connectors", "MCP servers the assistant can call"),
     Tools("Custom tools", "HTTP actions you add yourself"),
     SyncPad("SyncPad", "Your clipboard, here and on the widget"),
-    Brief("Home-screen brief", "The memory image on your home screen"),
 }
 
 /**
@@ -209,13 +207,6 @@ fun SettingsScreen(
                     page = SettingsPage.SyncPad,
                     accent = accent,
                     onClick = { page = SettingsPage.SyncPad }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                SettingsMenuRow(
-                    icon = R.drawable.ic_document,
-                    page = SettingsPage.Brief,
-                    accent = accent,
-                    onClick = { page = SettingsPage.Brief }
                 )
 
                 Spacer(modifier = Modifier.height(28.dp))
@@ -394,7 +385,6 @@ private fun SettingsSectionPage(
         SettingsPage.Connectors -> ConnectorsPage(onBack = onBack)
         SettingsPage.Tools -> ToolsPage(onBack = onBack)
         SettingsPage.SyncPad -> SyncPadPage(onBack = onBack)
-        SettingsPage.Brief -> BriefPage(onBack = onBack)
     }
 }
 
@@ -1154,50 +1144,6 @@ private fun SyncPadPage(onBack: () -> Unit) {
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-    }
-}
-
-/** The home-screen brief widget, rebuilt on demand. */
-@Composable
-private fun BriefPage(onBack: () -> Unit) {
-    val context = LocalContext.current
-
-    SettingsPageScaffold(
-        title = SettingsPage.Brief.title,
-        subtitle = SettingsPage.Brief.subtitle,
-        onBack = onBack
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "Renders your memories into the widget image. Only tapping " +
-                    "refresh spends a model request.",
-                style = MaterialTheme.typography.bodySmall,
-                color = AppColors.TextSecondary
-            )
-
-            Box(
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .clip(CircleShape)
-                    .background(AppColors.SurfaceRaised)
-                    .clickable { BriefWorker.enqueue(context) }
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
-            ) {
-                Text(
-                    text = "Rebuild the brief",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = AppColors.TextPrimary
-                )
             }
 
             Spacer(modifier = Modifier.height(28.dp))

@@ -2,7 +2,11 @@ package com.example.heyandroid.widget
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
+import com.example.heyandroid.R
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -110,7 +114,19 @@ class BriefWorker @AssistedInject constructor(
 
         best?.let { write(it) }
         BriefWidgetProvider.updateAll(applicationContext)
+        if (best != null) toastBuilt()
         return Result.success()
+    }
+
+    /** Tells the user the new brief has landed, since the widget is often off screen. */
+    private fun toastBuilt() {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(
+                applicationContext,
+                R.string.brief_ready,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     /** The exact page that produced the widget, kept for inspection. */
