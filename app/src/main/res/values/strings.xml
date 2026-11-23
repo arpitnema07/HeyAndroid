@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">HeyAndroid</string>
+    <string name="widget_brief_description">Your memory brief</string>
+    <string name="widget_brief_empty">Your brief is empty.\nTap refresh to build it.</string>
+    <string name="widget_brief_refresh">Refresh brief</string>
+</resources>

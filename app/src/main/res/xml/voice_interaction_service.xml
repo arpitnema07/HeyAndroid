@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Metadata consumed by the system to wire up VoiceInteractionService.
+     sessionService     – creates VoiceInteractionSession instances.
+     recognitionService – required by VoiceInteractionServiceInfo to pass validation.
+     supportsAssist / supportsLaunchVoiceAssistFromKeyguard – assistant capabilities. -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.example.heyandroid.assistant.HeyAndroidSessionService"
+    android:recognitionService="com.example.heyandroid.assistant.HeyAndroidRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />

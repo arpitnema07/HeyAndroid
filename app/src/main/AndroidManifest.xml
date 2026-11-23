@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Needed for speech recognition.
+         Requested at runtime before recording starts. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- The newest screenshot is attached by default. Reading it from the gallery
+         is a normal media read; nothing is captured with screen-capture consent. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Reminders saved in memory post a notification when they come due. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- One-shot screen capture with the user's MediaProjection consent. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- The user's own LLM API key is sent directly to the chosen provider
+         from their device via HTTPS. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- "Call Mom": with this the assistant starts the call itself; without it the
+         dialer opens with the number filled in. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- Android 11+ package visibility: without this, SpeechRecognizer cannot
+         discover the device's speech recognition service. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".HeyAndroidApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.HeyAndroid">
+
+        <!-- Main launcher activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.HeyAndroid"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Serves the full-resolution brief PNG to the widget host. Not
+             exported; read access is granted per-URI to the home app. -->
+        <provider
+            android:name=".widget.BriefImageProvider"
+            android:authorities="com.example.heyandroid.brief"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- The brief page: the AI-authored HTML, rendered in a WebView.
+             Opened from the widget and from the home header. -->
+        <activity
+            android:name=".brief.BriefActivity"
+            android:exported="false"
+            android:theme="@style/Theme.HeyAndroid" />
+
+        <!-- Launched by HeyAndroidSession when the assistant is invoked,
+             or directly invoked by system Assist gestures.
+             CATEGORY_VOICE is strictly required by startVoiceActivity(),
+             otherwise Android throws SecurityException.
+
+             Its own task affinity keeps the overlay out of the main app's task, so
+             summoning the assistant never brings the app's screens back up. -->
+        <activity
+            android:name=".assistant.AssistantActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.example.heyandroid.assistant"
+            android:theme="@style/Theme.HeyAndroid.AssistantOverlay"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.VOICE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.VOICE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.VOICE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Always-running lightweight service.
+             BIND_VOICE_INTERACTION is a system-enforced permission that prevents
+             other apps from binding to this service. -->
+        <service
+            android:name=".assistant.HeyAndroidVoiceInteractionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Creates VoiceInteractionSession instances.
+             Referenced from voice_interaction_service.xml metadata. -->
+        <service
+            android:name=".assistant.HeyAndroidSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- RecognitionService paired with VoiceInteractionService.
+             Declared so VoiceInteractionServiceInfo passes system validation. -->
+        <service
+            android:name=".assistant.HeyAndroidRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- Captures one frame after the user approves the system projection prompt. -->
+        <service
+            android:name=".assistant.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Home-screen brief. The refresh action goes to a non-exported receiver so
+             no other app can trigger a model request. -->
+        <receiver
+            android:name=".widget.BriefWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_brief_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_brief_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.BriefRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.heyandroid.action.BRIEF_REFRESH" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WorkManager starts through HeyAndroidApp so workers get Hilt dependencies. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+    </application>
+
+</manifest>
