@@ -169,8 +169,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- Recent SyncPad clips. Refresh and copy go to a non-exported receiver,
-             so only the widget can trigger a SyncPad request or clipboard write. -->
+        <!-- Recent SyncPad clips, drawn with Glance. Buttons and rows act through
+             Glance callbacks, so no other app can drive it. -->
         <receiver
             android:name=".widget.SyncPadWidgetProvider"
             android:exported="true"
@@ -183,14 +183,7 @@
                 android:resource="@xml/widget_syncpad_info" />
         </receiver>
 
-        <receiver
-            android:name=".widget.SyncPadWidgetActionReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.example.heyandroid.action.SYNCPAD_REFRESH" />
-                <action android:name="com.example.heyandroid.action.SYNCPAD_COPY" />
-            </intent-filter>
-        </receiver>
+
 
         <!-- WorkManager starts through HeyAndroidApp so workers get Hilt dependencies. -->
         <provider

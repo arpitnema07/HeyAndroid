@@ -25,30 +25,38 @@ class SyncPadRepository private constructor(context: Context) {
     suspend fun ping(): Result<String> = client.ping()
 
     /** Newest page of clips; also what the widget draws. */
-    suspend fun refresh(limit: Int = 40): Result<List<SyncPadClip>> =
-        client.listClips(limit).onSuccess { clips ->
-            cache.save(clips)
+    suspend fun refresh(limit: Int = 40): Result<List<SyncPadClip>> {
+        val result = client.listClips(limit)
+        if (result.isSuccess) {
+            cache.save(result.getOrDefault(emptyList()))
             cache.lastSyncAt = System.currentTimeMillis()
             SyncPadWidgetProvider.updateAll(appContext)
         }
+        return result
+    }
 
-    suspend fun addText(content: String): Result<SyncPadClip> =
-        client.addText(content).onSuccess { clip ->
-            cache.prepend(clip)
-            SyncPadWidgetProvider.updateAll(appContext)
-        }
+    suspend fun addText(content: String): Result<SyncPadClip> {
+        val result = client.addText(content)
+        result.getOrNull()?.let { cache.prepend(it) }
+        if (result.isSuccess) SyncPadWidgetProvider.updateAll(appContext)
+        return result
+    }
 
-    suspend fun upload(fileName: String, mimeType: String, bytes: ByteArray): Result<SyncPadClip> =
-        client.upload(fileName, mimeType, bytes).onSuccess { clip ->
-            cache.prepend(clip)
-            SyncPadWidgetProvider.updateAll(appContext)
-        }
+    suspend fun upload(fileName: String, mimeType: String, bytes: ByteArray): Result<SyncPadClip> {
+        val result = client.upload(fileName, mimeType, bytes)
+        result.getOrNull()?.let { cache.prepend(it) }
+        if (result.isSuccess) SyncPadWidgetProvider.updateAll(appContext)
+        return result
+    }
 
-    suspend fun delete(id: String): Result<Unit> =
-        client.deleteClip(id).onSuccess {
+    suspend fun delete(id: String): Result<Unit> {
+        val result = client.deleteClip(id)
+        if (result.isSuccess) {
             cache.remove(id)
             SyncPadWidgetProvider.updateAll(appContext)
         }
+        return result
+    }
 
     suspend fun downloadBytes(id: String): Result<ByteArray> = client.downloadBytes(id)
 

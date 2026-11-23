@@ -151,7 +151,7 @@ fun SettingsScreen(
         syncpadStatusOk = true
         syncpadStatus = "Saved"
         SyncPadSyncWorker.enqueue(context)
-        SyncPadWidgetProvider.updateAll(context)
+        scope.launch { SyncPadWidgetProvider.updateAll(context) }
     }
 
     fun testSyncPad() {
@@ -793,7 +793,7 @@ fun SettingsScreen(
                                     syncpadStatus = "Disconnected"
                                     syncpadStatusOk = true
                                     SyncPadSyncWorker.cancel(context)
-                                    SyncPadWidgetProvider.updateAll(context)
+                                    scope.launch { SyncPadWidgetProvider.updateAll(context) }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         )

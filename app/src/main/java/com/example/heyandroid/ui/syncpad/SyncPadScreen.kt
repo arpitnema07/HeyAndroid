@@ -61,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.heyandroid.R
+import com.example.heyandroid.syncpad.LinkPreview
+import com.example.heyandroid.syncpad.LinkPreviewFetcher
 import com.example.heyandroid.syncpad.SyncPadClip
 import com.example.heyandroid.syncpad.SyncPadRepository
 import com.example.heyandroid.ui.components.AppCard
@@ -617,13 +619,18 @@ private fun ClipCard(
                 )
             }
 
+            clip.type == "url" -> LinkPreviewCard(
+                clip = clip,
+                accent = accent,
+                onOpenUrl = onOpenUrl
+            )
+
             else -> Text(
                 text = clip.content.orEmpty(),
                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                color = if (clip.type == "url") accent else AppColors.TextPrimary,
+                color = AppColors.TextPrimary,
                 maxLines = 8,
-                overflow = TextOverflow.Ellipsis,
-                modifier = if (clip.type == "url") Modifier.clickable(onClick = onOpenUrl) else Modifier
+                overflow = TextOverflow.Ellipsis
             )
         }
 
@@ -674,6 +681,73 @@ private fun CardAction(icon: Int, label: String, onClick: () -> Unit) {
             style = MaterialTheme.typography.labelMedium,
             color = AppColors.TextSecondary
         )
+    }
+}
+
+/**
+ * A link clip, shown the way the web app shows it: the page's own title, summary
+ * and preview image. The host is known from the URL itself, so something is on
+ * screen immediately while the page is fetched; a page without Open Graph tags
+ * falls back to its `<title>`, then to the URL.
+ */
+@Composable
+private fun LinkPreviewCard(clip: SyncPadClip, accent: Color, onOpenUrl: () -> Unit) {
+    val url = clip.content.orEmpty()
+    val preview by produceState<LinkPreview?>(initialValue = null, key1 = clip.id) {
+        value = LinkPreviewFetcher.preview(url).getOrNull()
+    }
+
+    val title = preview?.title ?: clip.title ?: LinkPreviewFetcher.hostOf(url)
+    val image = preview?.image
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(AppColors.SurfaceSunken)
+            .clickable(onClick = onOpenUrl)
+    ) {
+        if (image != null) {
+            Image(
+                bitmap = image.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+            )
+        }
+
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            preview?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = AppColors.TextSecondary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+            }
+
+            Text(
+                text = LinkPreviewFetcher.hostOf(url),
+                style = MaterialTheme.typography.labelSmall,
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 7.dp)
+            )
+        }
     }
 }
 

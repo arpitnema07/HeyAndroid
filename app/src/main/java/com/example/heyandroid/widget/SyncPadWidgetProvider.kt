@@ -1,172 +1,302 @@
 package com.example.heyandroid.widget
 
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.view.View
-import android.widget.RemoteViews
+import android.widget.Toast
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.glance.GlanceId
+import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
+import androidx.glance.action.clickable
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
+import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.updateAll
+import androidx.glance.background
+import androidx.glance.color.ColorProvider
+import androidx.glance.layout.Alignment
+import androidx.glance.layout.Column
+import androidx.glance.layout.Row
+import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxSize
+import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
+import androidx.glance.layout.padding
+import androidx.glance.layout.size
+import androidx.glance.text.FontWeight
+import androidx.glance.text.Text
+import androidx.glance.text.TextStyle
 import com.example.heyandroid.MainActivity
 import com.example.heyandroid.R
 import com.example.heyandroid.syncpad.SyncPadClip
 import com.example.heyandroid.syncpad.SyncPadClipCache
 
 /**
- * Home-screen widget with the newest clips from the user's SyncPad clipboard.
+ * Home-screen SyncPad, written in Compose for widgets (Glance).
  *
- * It draws from the on-disk cache immediately, so it never sits empty while a
- * request is in flight. Tapping the refresh button asks the sync worker for a
- * fresh page; the in-app SyncPad screen refreshes it as it polls, and the worker
- * also runs on a periodic schedule.
+ * The whole list scrolls, so the widget shows as many clips as its height allows
+ * instead of stopping at five. It draws from the on-disk cache, so it has content
+ * the moment it is placed and after a reboot, before any request finishes.
  *
- * A text row copies that clip to the system clipboard, so it can be pasted into
- * any app from the home screen. The paste button goes the other way: it opens
- * the SyncPad screen with whatever is on the clipboard already in the composer,
- * waiting to be sent. (A widget cannot read the clipboard itself - Android only
- * lets the focused app read it - so that step needs the app on screen.)
+ * Tapping a text row copies that clip to the system clipboard, which needs no
+ * screen (Android only restricts *reading* the clipboard to the focused app). The
+ * paste button goes the other way: it opens the SyncPad composer with whatever is
+ * on the clipboard, because that read does need the app in front.
  */
-class SyncPadWidgetProvider : AppWidgetProvider() {
+class SyncPadGlanceWidget : GlanceAppWidget() {
 
-    override fun onUpdate(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray
-    ) {
-        appWidgetIds.forEach { id -> render(context, appWidgetManager, id) }
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val clips = SyncPadClipCache.getInstance(context).load()
+        provideContent { WidgetContent(clips) }
     }
+}
+
+/** The widget's broadcast receiver; Glance re-renders through it. */
+class SyncPadWidgetProvider : GlanceAppWidgetReceiver() {
+
+    override val glanceAppWidget: GlanceAppWidget = SyncPadGlanceWidget()
 
     override fun onEnabled(context: Context) {
+        super.onEnabled(context)
         SyncPadSyncWorker.schedule(context)
     }
 
     override fun onDisabled(context: Context) {
+        super.onDisabled(context)
         SyncPadSyncWorker.cancel(context)
     }
 
     companion object {
-        const val ACTION_REFRESH = "com.example.heyandroid.action.SYNCPAD_REFRESH"
-        const val ACTION_COPY = "com.example.heyandroid.action.SYNCPAD_COPY"
-        const val EXTRA_CLIP_ID = "clip_id"
-        private const val MAX_ROWS = 5
-
-        fun ids(context: Context): IntArray =
-            AppWidgetManager.getInstance(context)
-                .getAppWidgetIds(ComponentName(context, SyncPadWidgetProvider::class.java))
-
         /** Redraws every placed widget from the cache. */
-        fun updateAll(context: Context) {
-            val manager = AppWidgetManager.getInstance(context)
-            val clips = SyncPadClipCache.getInstance(context).load().take(MAX_ROWS)
-            ids(context).forEach { id -> render(context, manager, id, clips) }
+        suspend fun updateAll(context: Context) {
+            SyncPadGlanceWidget().updateAll(context)
         }
+    }
+}
 
-        private fun typeLabel(type: String): String = when (type) {
-            "url" -> "LINK"
-            "image" -> "IMAGE"
-            "file" -> "FILE"
-            "code" -> "CODE"
-            else -> "TEXT"
+private val TextPrimary = ColorProvider(Color(0xFFEDF0F6), Color(0xFFEDF0F6))
+private val TextSecondary = ColorProvider(Color(0xFFB0AEBD), Color(0xFFB0AEBD))
+private val TextTertiary = ColorProvider(Color(0xFF8B94A3), Color(0xFF8B94A3))
+private val Accent = ColorProvider(Color(0xFF8FA8FF), Color(0xFF8FA8FF))
+private val RowSurface = ColorProvider(Color(0x1AFFFFFF), Color(0x1AFFFFFF))
+private val Surface = ColorProvider(Color(0xF20B0B12), Color(0xF20B0B12))
+
+private val CLIP_ID = ActionParameters.Key<String>("clip_id")
+
+@Composable
+private fun WidgetContent(all: List<SyncPadClip>) {
+    val context = LocalContext.current
+    val clips = all.take(MAX_CLIPS)
+
+    Column(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .background(ImageProvider(R.drawable.widget_brief_bg)))
+    {
+        Column(modifier = GlanceModifier.fillMaxSize().padding(14.dp)) {
+            Header()
+
+            if (clips.isEmpty()) {
+                Text(
+                    text = context.getString(R.string.widget_syncpad_empty),
+                    style = TextStyle(color = TextSecondary, fontSize = 12.sp),
+                    modifier = GlanceModifier.padding(top = 12.dp)
+                )
+                Spacer(modifier = GlanceModifier.height(8.dp))
+                Text(
+                    text = context.getString(R.string.widget_syncpad_hint),
+                    style = TextStyle(color = TextTertiary, fontSize = 11.sp)
+                )
+            } else {
+                Spacer(modifier = GlanceModifier.height(8.dp))
+                LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                    items(clips, itemId = { it.id.hashCode().toLong() }) { clip ->
+                        ClipRow(clip)
+                    }
+                }
+            }
         }
+    }
+}
 
-        private fun openIntent(context: Context): PendingIntent =
-            PendingIntent.getActivity(
-                context,
-                10,
-                Intent(context, MainActivity::class.java).apply {
-                    putExtra(MainActivity.EXTRA_TAB, MainActivity.TAB_SYNCPAD)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+@Composable
+private fun Header() {
+    val context = LocalContext.current
+    val openApp = actionStartActivity(
+        Intent(context, MainActivity::class.java).apply {
+            putExtra(MainActivity.EXTRA_TAB, MainActivity.TAB_SYNCPAD)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+    )
+
+    Row(
+        modifier = GlanceModifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = GlanceModifier.defaultWeight().clickable(openApp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = context.getString(R.string.widget_syncpad_title),
+                style = TextStyle(
+                    color = Accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             )
+            Text(
+                text = context.getString(R.string.widget_syncpad_subtitle),
+                style = TextStyle(color = TextTertiary, fontSize = 9.sp),
+                modifier = GlanceModifier.padding(top = 2.dp)
+            )
+        }
 
-        /**
-         * The paste button: the composer is filled from the clipboard by the app,
-         * because only a visible app may read the clipboard.
-         */
-        private fun pasteIntent(context: Context): PendingIntent =
-            PendingIntent.getActivity(
-                context,
-                12,
+        IconButton(
+            icon = R.drawable.ic_paste,
+            description = context.getString(R.string.widget_syncpad_paste),
+            onClick = actionStartActivity(
                 Intent(context, MainActivity::class.java).apply {
                     putExtra(MainActivity.EXTRA_TAB, MainActivity.TAB_SYNCPAD)
                     putExtra(MainActivity.EXTRA_PASTE_CLIPBOARD, true)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-        /** One row's tap target, unique per clip so it acts on the right clip. */
-        private fun rowIntent(context: Context, clipId: String, index: Int): PendingIntent =
-            PendingIntent.getBroadcast(
-                context,
-                100 + index,
-                Intent(context, SyncPadWidgetActionReceiver::class.java).apply {
-                    action = ACTION_COPY
-                    putExtra(EXTRA_CLIP_ID, clipId)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-        private fun render(
-            context: Context,
-            manager: AppWidgetManager,
-            id: Int,
-            clips: List<SyncPadClip> = SyncPadClipCache.getInstance(context).load().take(MAX_ROWS)
-        ) {
-            val views = RemoteViews(context.packageName, R.layout.widget_syncpad)
-
-            views.setOnClickPendingIntent(R.id.widget_syncpad_refresh, refreshIntent(context))
-            views.setOnClickPendingIntent(R.id.widget_syncpad_paste, pasteIntent(context))
-            views.setOnClickPendingIntent(R.id.widget_syncpad_title, openIntent(context))
-            views.setOnClickPendingIntent(R.id.widget_syncpad_empty, openIntent(context))
-            views.removeAllViews(R.id.widget_syncpad_clips)
-
-            if (clips.isEmpty()) {
-                views.setViewVisibility(R.id.widget_syncpad_empty, View.VISIBLE)
-            } else {
-                views.setViewVisibility(R.id.widget_syncpad_empty, View.GONE)
-                clips.forEachIndexed { index, clip ->
-                    val row = RemoteViews(context.packageName, R.layout.widget_syncpad_row)
-                    row.setTextViewText(R.id.syncpad_row_type, typeLabel(clip.type))
-                    row.setTextViewText(
-                        R.id.syncpad_row_text,
-                        clip.preview.ifBlank { clip.headline }
-                    )
-                    // Text clips can be copied straight from the widget; an image
-                    // or a file has nothing to put on the clipboard, so it opens
-                    // the clip in the app instead.
-                    if (clip.isText) {
-                        row.setViewVisibility(R.id.syncpad_row_copy, View.VISIBLE)
-                        row.setOnClickPendingIntent(
-                            R.id.syncpad_row,
-                            rowIntent(context, clip.id, index)
-                        )
-                    } else {
-                        row.setViewVisibility(R.id.syncpad_row_copy, View.GONE)
-                        row.setOnClickPendingIntent(
-                            R.id.syncpad_row,
-                            openIntent(context)
-                        )
-                    }
-                    views.addView(R.id.widget_syncpad_clips, row)
                 }
-            }
+            )
+        )
+        Spacer(modifier = GlanceModifier.size(6.dp))
+        IconButton(
+            icon = R.drawable.ic_refresh,
+            description = context.getString(R.string.widget_syncpad_refresh),
+            onClick = actionRunCallback<RefreshClipsAction>()
+        )
+    }
+}
 
-            manager.updateAppWidget(id, views)
+@Composable
+private fun IconButton(
+    icon: Int,
+    description: String,
+    onClick: androidx.glance.action.Action
+) {
+    Image(
+        provider = ImageProvider(icon),
+        contentDescription = description,
+        modifier = GlanceModifier
+            .size(30.dp)
+            .background(ImageProvider(R.drawable.widget_refresh_bg))
+            .padding(7.dp)
+            .clickable(onClick)
+    )
+}
+
+@Composable
+private fun ClipRow(clip: SyncPadClip) {
+    val context = LocalContext.current
+    val openApp = actionStartActivity(
+        Intent(context, MainActivity::class.java).apply {
+            putExtra(MainActivity.EXTRA_TAB, MainActivity.TAB_SYNCPAD)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+    )
+    // A text clip can be copied where it stands; an image or a file has nothing
+    // to put on the clipboard, so it opens the clip in the app instead.
+    val action = if (clip.isText) {
+        actionRunCallback<CopyClipAction>(actionParametersOf(CLIP_ID to clip.id))
+    } else {
+        openApp
+    }
+
+    Column(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp)
+            .background(RowSurface)
+            .clickable(action)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = typeLabel(clip.type),
+                style = TextStyle(color = TextTertiary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            )
+            if (clip.isText) {
+                Spacer(modifier = GlanceModifier.defaultWeight())
+                Text(
+                    text = context.getString(R.string.widget_syncpad_copy),
+                    style = TextStyle(color = Accent, fontSize = 8.sp)
+                )
+            }
+        }
+        Text(
+            text = clip.preview.ifBlank { clip.headline },
+            style = TextStyle(color = TextPrimary, fontSize = 12.sp),
+            maxLines = 2,
+            modifier = GlanceModifier.padding(top = 2.dp)
+        )
+    }
+}
+
+private const val MAX_CLIPS = 60
+
+private fun typeLabel(type: String): String = when (type) {
+    "url" -> "LINK"
+    "image" -> "IMAGE"
+    "file" -> "FILE"
+    "code" -> "CODE"
+    else -> "TEXT"
+}
+
+/** Puts one clip on the system clipboard, from the home screen. */
+class CopyClipAction : ActionCallback {
+
+    override suspend fun onAction(
+        context: Context,
+        glanceId: GlanceId,
+        parameters: ActionParameters
+    ) {
+        val id = parameters[CLIP_ID] ?: return
+        val clip = SyncPadClipCache.getInstance(context).load().firstOrNull { it.id == id } ?: return
+        val text = clip.content
+        if (text.isNullOrBlank()) {
+            Toast.makeText(context, R.string.widget_syncpad_nothing_to_copy, Toast.LENGTH_SHORT)
+                .show()
+            return
         }
 
-        private fun refreshIntent(context: Context): PendingIntent =
-            PendingIntent.getBroadcast(
-                context,
-                11,
-                Intent(context, SyncPadWidgetActionReceiver::class.java).setAction(ACTION_REFRESH),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SyncPad clip", text))
+        Toast.makeText(context, R.string.widget_syncpad_copied, Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** The refresh button: pull a fresh page and redraw. */
+class RefreshClipsAction : ActionCallback {
+
+    override suspend fun onAction(
+        context: Context,
+        glanceId: GlanceId,
+        parameters: ActionParameters
+    ) {
+        SyncPadSyncWorker.enqueue(context)
     }
 }
