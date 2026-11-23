@@ -31,7 +31,7 @@ import com.example.heyandroid.data.turn.TurnLogDao
         MemoryVector::class,
         TurnLog::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -205,6 +205,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Reminders are gone: they are alarms and calendar events now. Any row the
+         * old builds saved as a reminder becomes a task, which keeps its due time
+         * and its place in the list instead of tripping the enum converter.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `memories` SET `kind` = 'TASK' WHERE `kind` = 'REMINDER'")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -217,7 +228,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                     )
                     .build()
                     .also { INSTANCE = it }

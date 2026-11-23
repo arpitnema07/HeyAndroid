@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -113,13 +115,13 @@ private fun WidgetContent(all: List<SyncPadClip>) {
             if (clips.isEmpty()) {
                 Text(
                     text = context.getString(R.string.widget_syncpad_empty),
-                    style = TextStyle(color = TextSecondary, fontSize = 12.sp),
+                    style = TextStyle(color = TextSecondary, fontSize = 14.sp),
                     modifier = GlanceModifier.padding(top = 12.dp)
                 )
                 Spacer(modifier = GlanceModifier.height(8.dp))
                 Text(
                     text = context.getString(R.string.widget_syncpad_hint),
-                    style = TextStyle(color = TextTertiary, fontSize = 11.sp)
+                    style = TextStyle(color = TextTertiary, fontSize = 12.sp)
                 )
             } else {
                 Spacer(modifier = GlanceModifier.height(8.dp))
@@ -152,13 +154,16 @@ private fun Header() {
                 text = context.getString(R.string.widget_syncpad_title),
                 style = TextStyle(
                     color = Accent,
-                    fontSize = 11.sp,
+                    // Sized like body text on purpose: Glance scales sp with the
+                    // user's system font size, so the widget follows that setting
+                    // instead of carrying its own tiny scale.
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             )
             Text(
                 text = context.getString(R.string.widget_syncpad_subtitle),
-                style = TextStyle(color = TextTertiary, fontSize = 9.sp),
+                style = TextStyle(color = TextTertiary, fontSize = 11.sp),
                 modifier = GlanceModifier.padding(top = 2.dp)
             )
         }
@@ -232,19 +237,19 @@ private fun ClipRow(clip: SyncPadClip) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = typeLabel(clip.type),
-                style = TextStyle(color = TextTertiary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(color = TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             )
             if (clip.isText) {
                 Spacer(modifier = GlanceModifier.defaultWeight())
                 Text(
                     text = context.getString(R.string.widget_syncpad_copy),
-                    style = TextStyle(color = Accent, fontSize = 8.sp)
+                    style = TextStyle(color = Accent, fontSize = 10.sp)
                 )
             }
         }
         Text(
             text = clip.preview.ifBlank { clip.headline },
-            style = TextStyle(color = TextPrimary, fontSize = 12.sp),
+            style = TextStyle(color = TextPrimary, fontSize = 14.sp),
             maxLines = 2,
             modifier = GlanceModifier.padding(top = 2.dp)
         )
@@ -273,14 +278,26 @@ class CopyClipAction : ActionCallback {
         val clip = SyncPadClipCache.getInstance(context).load().firstOrNull { it.id == id } ?: return
         val text = clip.content
         if (text.isNullOrBlank()) {
-            Toast.makeText(context, R.string.widget_syncpad_nothing_to_copy, Toast.LENGTH_SHORT)
-                .show()
+            toast(context, R.string.widget_syncpad_nothing_to_copy)
             return
         }
 
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("SyncPad clip", text))
-        Toast.makeText(context, R.string.widget_syncpad_copied, Toast.LENGTH_SHORT).show()
+        toast(context, R.string.widget_syncpad_copied)
+    }
+}
+
+/**
+ * A widget action runs on a background coroutine, and Toast needs a Looper: calling
+ * Toast.makeText there threw "Can't toast on a thread that has not called
+ * Looper.prepare()", which killed the whole action callback. Always post to main.
+ */
+private fun toast(context: Context, message: Int) {
+    Handler(Looper.getMainLooper()).post {
+        runCatching {
+            Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+        }
     }
 }
 

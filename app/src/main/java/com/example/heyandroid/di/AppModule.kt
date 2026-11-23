@@ -19,6 +19,7 @@ import com.example.heyandroid.tools.EditNoteTool
 import com.example.heyandroid.tools.ListMemoriesTool
 import com.example.heyandroid.tools.McpTool
 import com.example.heyandroid.tools.SaveMemoryTool
+import com.example.heyandroid.tools.SearchContactsTool
 import com.example.heyandroid.tools.SearchMemoryTool
 import com.example.heyandroid.tools.StartCallTool
 import com.example.heyandroid.tools.SyncPadImageTool
@@ -94,6 +95,7 @@ object AppModule {
         listMemories: ListMemoriesTool,
         updateMemory: UpdateMemoryTool,
         editNote: EditNoteTool,
+        searchContacts: SearchContactsTool,
         startCall: StartCallTool,
         calendarEvent: CalendarEventTool,
         clock: ClockTool,
@@ -114,6 +116,7 @@ object AppModule {
             syncPadScreenshot,
             syncPadImage,
             editNote,
+            searchContacts,
             startCall,
             calendarEvent,
             clock,

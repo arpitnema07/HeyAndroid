@@ -69,7 +69,9 @@ class BriefGenerator @Inject constructor(
             )
         }
 
-        val client = LlmClientFactory.create(config.provider, config.apiKey, config.model)
+        val client = LlmClientFactory.create(
+            config.provider, config.apiKey, config.model, config.baseUrl
+        )
         val input = buildString {
             append(briefInput(picks, everything.size, width, height))
             append("\nPhone portrait canvas: ").append(deviceWidthCss).append('x')
@@ -272,8 +274,6 @@ class BriefGenerator @Inject constructor(
     private fun icon(kind: MemoryKind): String = when (kind) {
         MemoryKind.TASK ->
             """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12.4l2.6 2.7L16 9.6"/></svg>"""
-        MemoryKind.REMINDER ->
-            """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17.5h12M8.2 17.5v-4.2a3.8 3.8 0 0 1 7.6 0v4.2M12 6.4V4.8M10.4 20.2a1.7 1.7 0 0 0 3.2 0"/></svg>"""
         MemoryKind.PROGRESS ->
             """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M10.2 8.6l5.2 3.4-5.2 3.4z"/></svg>"""
         MemoryKind.ITEM ->
@@ -288,7 +288,6 @@ class BriefGenerator @Inject constructor(
 
     private fun tint(memory: Memory): String = when (memory.kind) {
         MemoryKind.PROGRESS -> "#7DE2C3"
-        MemoryKind.REMINDER -> "#F3BE6B"
         MemoryKind.TASK -> "#8FA8FF"
         MemoryKind.ITEM -> "#7FC7FF"
         MemoryKind.TRANSACTION -> "#9BE38A"

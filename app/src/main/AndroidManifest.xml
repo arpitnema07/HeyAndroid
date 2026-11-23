@@ -13,7 +13,7 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- Reminders saved in memory post a notification when they come due. -->
+    <!-- The screen-capture service shows a notification while it runs. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- One-shot screen capture with the user's MediaProjection consent. -->
@@ -24,13 +24,30 @@
          from their device via HTTPS. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- "Call Mom": the name is looked up in the contacts to find the number.
+         Requested at runtime when the assistant opens. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <!-- "Call Mom": with this the assistant starts the call itself; without it the
          dialer opens with the number filled in. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 
+    <!-- Required by clock apps (ColorOS/OPPO among them) before they accept
+         SET_ALARM / SET_TIMER; without it the alarm intent is refused outright. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <!-- Android 11+ package visibility: without this, SpeechRecognizer cannot
          discover the device's speech recognition service. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
+        </intent>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>

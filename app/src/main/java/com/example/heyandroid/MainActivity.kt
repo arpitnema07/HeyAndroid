@@ -21,7 +21,6 @@ import com.example.heyandroid.ui.home.HomeScreen
 import com.example.heyandroid.ui.theme.HeyAndroidTheme
 import com.example.heyandroid.widget.BriefWorker
 import com.example.heyandroid.widget.SyncPadSyncWorker
-import com.example.heyandroid.work.ReminderWorker
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import androidx.lifecycle.lifecycleScope
@@ -57,14 +56,10 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
 
-        ReminderWorker.ensureChannel(this)
-        ReminderWorker.schedule(this)
-
         // A capture left pending by a killed process is marked failed, so the Log
         // tab never shows a row that can no longer progress as pending.
         lifecycleScope.launch {
             captureProcessor.failStale()
-            memoryEngine.repairUnscheduledReminders()
         }
 
         // The widget must never sit on "brief is empty": rebuild it on launch

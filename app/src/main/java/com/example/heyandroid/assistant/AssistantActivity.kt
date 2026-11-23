@@ -52,10 +52,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -116,6 +118,9 @@ import com.example.heyandroid.memory.MemoryEngine
 import com.example.heyandroid.speech.AndroidSpeechToText
 import com.example.heyandroid.speech.SpeechState
 import com.example.heyandroid.speech.SpeechToText
+import com.example.heyandroid.tools.CallChoice
+import com.example.heyandroid.tools.CallChoiceStore
+import com.example.heyandroid.tools.PendingCall
 import com.example.heyandroid.tools.ToolRouter
 import com.example.heyandroid.ui.components.AppColors
 import com.example.heyandroid.ui.markdown.MarkdownText
@@ -155,6 +160,9 @@ class AssistantActivity : ComponentActivity() {
 
     @Inject
     lateinit var turnLogDao: TurnLogDao
+
+    @Inject
+    lateinit var callChoices: CallChoiceStore
 
     @Inject
     lateinit var settings: LlmSettingsStore
@@ -213,6 +221,10 @@ class AssistantActivity : ComponentActivity() {
             if (granted) action?.invoke()
         }
 
+    /** Asked once, so "call Mom" can look the number up and dial it directly. */
+    private val callPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+
     /**
      * A permission dialog is an activity start into another app, and it throws
      * synchronously when the platform forbids it. Never let that reach main.
@@ -220,6 +232,17 @@ class AssistantActivity : ComponentActivity() {
     private fun requestRecordPermission() {
         runCatching { recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
             .onFailure { hasRecordPermission = false }
+    }
+
+    private fun requestCallPermissions() {
+        val missing = listOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.CALL_PHONE
+        ).filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return
+        runCatching { callPermissionsLauncher.launch(missing.toTypedArray()) }
     }
 
     private fun requestMediaPermission(next: () -> Unit) {
@@ -244,6 +267,7 @@ class AssistantActivity : ComponentActivity() {
             memoryEngine = memoryEngine,
             toolRouter = toolRouter,
             turnLogDao = turnLogDao,
+            callChoices = callChoices,
             scope = lifecycleScope
         )
 
@@ -264,12 +288,15 @@ class AssistantActivity : ComponentActivity() {
 
         if (!hasRecordPermission) requestRecordPermission()
 
+        requestCallPermissions()
+
         setContent {
             HeyAndroidTheme {
                 AssistantChat(
                     hasPermission = hasRecordPermission,
                     speechToText = speechToText,
                     session = session,
+                    callChoices = callChoices,
                     inputMode = settings.inputMode.value,
                     capturedPhoto = capturedPhoto,
                     onCapturedPhotoConsumed = { capturedPhoto = null },
@@ -316,6 +343,7 @@ fun AssistantChat(
     hasPermission: Boolean,
     speechToText: SpeechToText,
     session: ChatSession,
+    callChoices: CallChoiceStore,
     inputMode: InputMode,
     capturedPhoto: String?,
     onCapturedPhotoConsumed: () -> Unit,
@@ -328,6 +356,9 @@ fun AssistantChat(
     val speechState by speechToText.state.collectAsState()
     val messages by session.messages.collectAsState()
     val thinking by session.thinking.collectAsState()
+    val pendingCalls by callChoices.choices.collectAsState()
+    val pendingCall by callChoices.pending.collectAsState()
+    val callSecondsLeft by callChoices.secondsLeft.collectAsState()
     val latestMessages = rememberUpdatedState(messages)
 
     var composer by remember { mutableStateOf("") }
@@ -668,6 +699,21 @@ fun AssistantChat(
                     }
                 }
 
+                val call = pendingCall
+                if (call != null) {
+                    PendingCallCard(
+                        call = call,
+                        secondsLeft = callSecondsLeft,
+                        onCancel = { session.cancelPendingCall() }
+                    )
+                } else if (pendingCalls.isNotEmpty()) {
+                    ContactChoices(
+                        choices = pendingCalls,
+                        onChoose = { index -> session.chooseCall(index) },
+                        onDismiss = { callChoices.clear() }
+                    )
+                }
+
                 InputBar(
                     composer = composer,
                     onComposerChange = { composer = it },
@@ -875,6 +921,167 @@ private fun Bubble(text: String, fill: Color, textColor: Color) {
             .background(fill)
             .padding(horizontal = 13.dp, vertical = 9.dp)
     )
+}
+
+/**
+ * "Which one should I call?": every matching contact is a row with its full name
+ * and number. A tap dials it immediately; tapping Cancel drops the options.
+ */
+@Composable
+private fun ContactChoices(
+    choices: List<CallChoice>,
+    onChoose: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Which one should I call?",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = AppColors.TextSecondary,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "Cancel",
+                style = MaterialTheme.typography.labelSmall,
+                color = AppColors.TextSecondary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+
+        // The rows scroll inside a fixed band so a long list never pushes the
+        // composer off the sheet.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 210.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            choices.forEachIndexed { index, choice ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(AppColors.Chip)
+                        .border(1.dp, AppColors.Border, RoundedCornerShape(14.dp))
+                        .clickable { onChoose(index) }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(AppColors.SurfaceSunken),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "${index + 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AppColors.TextSecondary
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 10.dp)
+                    ) {
+                        Text(
+                            text = choice.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AppColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = choice.number,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AppColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        text = "Call",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppColors.Accent
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The last look before a call goes out: who it is, the number, the seconds left
+ * and a Cancel button that stops the dial.
+ */
+@Composable
+private fun PendingCallCard(
+    call: PendingCall,
+    secondsLeft: Int,
+    onCancel: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(AppColors.AccentSoft)
+            .border(1.dp, AppColors.Accent.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Calling ${call.name}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = call.number,
+                style = MaterialTheme.typography.labelMedium,
+                color = AppColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = if (secondsLeft > 0) "Starts in $secondsLeft s" else "Starting…",
+                style = MaterialTheme.typography.labelSmall,
+                color = AppColors.Accent,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Text(
+            text = "Cancel",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = AppColors.TextPrimary,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(AppColors.SurfaceSunken)
+                .border(1.dp, AppColors.BorderStrong, RoundedCornerShape(10.dp))
+                .clickable(onClick = onCancel)
+                .padding(horizontal = 14.dp, vertical = 9.dp)
+        )
+    }
 }
 
 /** Tool activity is one collapsed line until tapped. */

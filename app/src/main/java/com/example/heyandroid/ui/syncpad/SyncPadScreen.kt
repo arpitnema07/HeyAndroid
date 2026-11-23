@@ -192,8 +192,9 @@ fun SyncPadScreen(
         }
     }
 
-    fun addDraft() {
-        val text = draft.trim()
+    /** Sends one clip; the composer's Add and Paste buttons both land here. */
+    fun sendClip(raw: String) {
+        val text = raw.trim()
         if (text.isEmpty() || busy) return
         scope.launch {
             busy = true
@@ -211,6 +212,8 @@ fun SyncPadScreen(
             busy = false
         }
     }
+
+    fun addDraft() = sendClip(draft)
 
     /** Adds the tag being typed, the way pressing Enter in the web composer does. */
     fun commitTag() {
@@ -293,12 +296,12 @@ fun SyncPadScreen(
             onRemoveTag = { tag -> tags = tags.filterNot { it == tag } },
             onAdd = { addDraft() },
             onAttach = { picker.launch("*/*") },
-            onPaste = {
+            onPasteSend = {
                 val text = clipboard.getText()?.text.orEmpty()
                 if (text.isBlank()) {
                     Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
                 } else {
-                    draft = text
+                    sendClip(text)
                 }
             }
         )
@@ -460,7 +463,7 @@ private fun Composer(
     onRemoveTag: (String) -> Unit,
     onAdd: () -> Unit,
     onAttach: () -> Unit,
-    onPaste: () -> Unit
+    onPasteSend: () -> Unit
 ) {
     AppCard(
         modifier = Modifier.fillMaxWidth(),
@@ -505,41 +508,48 @@ private fun Composer(
                 enabled = !busy,
                 onClick = onAttach
             )
-            ComposerAction(
-                icon = R.drawable.ic_copy,
-                label = "Paste",
-                tint = AppColors.TextSecondary,
-                enabled = !busy,
-                onClick = onPaste
-            )
             Spacer(modifier = Modifier.weight(1f))
+            // An empty composer shows Paste: one tap reads the clipboard and
+            // sends it as a clip. Typing anything turns the button back into
+            // Add, so the text in the field is what gets sent.
+            val pasting = draft.isBlank()
+            val active = !busy
+            val filled = active && !pasting
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(if (busy || draft.isBlank()) AppColors.SurfaceRaised else accent)
-                    .clickable(enabled = !busy && draft.isNotBlank(), onClick = onAdd)
+                    .background(if (filled) accent else AppColors.SurfaceRaised)
+                    .clickable(enabled = active) {
+                        if (pasting) onPasteSend() else onAdd()
+                    }
                     .padding(horizontal = 18.dp, vertical = 9.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_send),
+                        painter = painterResource(
+                            if (pasting) R.drawable.ic_copy else R.drawable.ic_send
+                        ),
                         contentDescription = null,
-                        tint = if (busy || draft.isBlank()) {
-                            AppColors.TextTertiary
-                        } else {
+                        tint = if (filled) {
                             MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            AppColors.TextTertiary
                         },
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(7.dp))
                     Text(
-                        text = if (busy) "Saving…" else "Add",
+                        text = when {
+                            busy -> "Saving…"
+                            pasting -> "Paste"
+                            else -> "Add"
+                        },
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (busy || draft.isBlank()) {
-                            AppColors.TextTertiary
-                        } else {
+                        color = if (filled) {
                             MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            AppColors.TextTertiary
                         }
                     )
                 }

@@ -134,24 +134,6 @@ class MemoryEngine @Inject constructor(
 
     suspend fun search(query: String, limit: Int = 20) = repository.search(query, limit)
 
-    /**
-     * Fixes reminders saved by older builds with no due time: their date is read
-     * from the title and content, and a missing date defaults to 9am tomorrow.
-     * Without this they would sit in memory forever and never notify.
-     */
-    suspend fun repairUnscheduledReminders(): Int {
-        val rows = repository.unscheduledReminders()
-        val now = System.currentTimeMillis()
-        rows.forEach { memory ->
-            val due = inferDue(memory.title + " " + memory.content, now) ?: defaultReminderDue(now)
-            repository.save(
-                memory.copy(dueAt = due, notifiedAt = null, updatedAt = now),
-                "Reminder time set"
-            )
-        }
-        return rows.size
-    }
-
     private suspend fun applyAction(
         action: Action,
         originalText: String,
@@ -217,9 +199,7 @@ class MemoryEngine @Inject constructor(
 
         val now = System.currentTimeMillis()
         val due = if (kind.needsDue) {
-            action.dueAt
-                ?: inferDue(originalText)
-                ?: if (kind == MemoryKind.REMINDER) defaultReminderDue() else null
+            action.dueAt ?: inferDue(originalText)
         } else {
             null
         }
@@ -331,7 +311,7 @@ class MemoryEngine @Inject constructor(
         val config = settings.config.value
         if (!config.isConfigured) return null
         val model = if (vision) config.provider.visionModel ?: return null else config.model
-        return LlmClientFactory.create(config.provider, config.apiKey, model)
+        return LlmClientFactory.create(config.provider, config.apiKey, model, config.baseUrl)
     }
 
     private fun parseActions(raw: String): List<Action> {
@@ -470,13 +450,6 @@ class MemoryEngine @Inject constructor(
             .atZone(zone).toInstant().toEpochMilli()
     }
 
-    /** 9am tomorrow, used when a reminder has no parseable date at all. */
-    private fun defaultReminderDue(now: Long = System.currentTimeMillis()): Long {
-        val zone = ZoneId.systemDefault()
-        val tomorrow = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate().plusDays(1)
-        return LocalDateTime.of(tomorrow, LocalTime.of(9, 0)).atZone(zone).toInstant().toEpochMilli()
-    }
-
     private fun parsedMonthDay(text: String, today: LocalDate): LocalDate? {
         val match = Regex("\\b(\\d{1,2})\\s+(january|february|march|april|may|june|july|august|september|october|november|december)\\b")
             .find(text) ?: return null
@@ -540,21 +513,22 @@ class MemoryEngine @Inject constructor(
             Reply with JSON only, no prose. Every memory uses the same shape; leave
             out whatever does not apply instead of inventing a value:
             {"memories":[{"action":"create|update|complete|archive","id":12,
-            "kind":"FACT|TASK|REMINDER|ITEM|PROGRESS|NOTE|TRANSACTION",
+            "kind":"FACT|TASK|ITEM|PROGRESS|NOTE|TRANSACTION",
             "subject":"stable lowercase key","title":"short label",
             "content":"details worth keeping","collection":"watching|reading|listening|shopping|ideas",
             "progress":"S1E2","status":"ACTIVE|DONE|ARCHIVED",
-            "dueAt":"YYYY-MM-DDTHH:mm, only for TASK and REMINDER",
+            "dueAt":"YYYY-MM-DDTHH:mm, only for TASK",
             "event":"short timeline note"}]}
 
             Fields, by what the thing is:
             - Every kind: title (under 60 characters), subject, content, and event
               when something changed.
-            - TASK and REMINDER: dueAt is REQUIRED. Resolve it to an absolute local
-              date and time using the current date given to you ("tomorrow at 6",
-              "Sunday morning" -> choose a sensible hour). Content says what to do.
-            - REMINDER is something the phone should alert about at that time.
-              TASK is something to get done, with or without a notification.
+            - TASK: dueAt is REQUIRED. Resolve it to an absolute local date and time
+              using the current date given to you ("tomorrow at 6", "Sunday morning"
+              -> choose a sensible hour). Content says what to do.
+            - A request to be reminded ("remind me to call Mom at 6") is NOT a memory:
+              the assistant sets a clock alarm or a calendar event for that, so leave
+              it out and reply {"memories":[]} for it.
             - ITEM: one thing on a list; collection says which list. No date.
             - PROGRESS: one row per series, book or game being followed; the current
               position goes in progress, the collection says what kind of thing it is.

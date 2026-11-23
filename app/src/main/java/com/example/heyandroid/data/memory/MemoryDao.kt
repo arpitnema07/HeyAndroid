@@ -43,26 +43,6 @@ interface MemoryDao {
     @Query("SELECT * FROM memories WHERE kind = :kind ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun byKind(kind: String, limit: Int): List<Memory>
 
-    @Query(
-        "SELECT * FROM memories WHERE kind = 'REMINDER' AND status = 'ACTIVE' " +
-            "AND dueAt IS NOT NULL AND dueAt BETWEEN :from AND :to ORDER BY dueAt ASC LIMIT 20"
-    )
-    suspend fun dueBetween(from: Long, to: Long): List<Memory>
-
-    @Query(
-        "SELECT * FROM memories WHERE kind = 'REMINDER' AND status = 'ACTIVE' " +
-            "AND dueAt IS NOT NULL AND dueAt <= :now AND notifiedAt IS NULL " +
-            "ORDER BY dueAt ASC LIMIT 20"
-    )
-    suspend fun dueReminders(now: Long): List<Memory>
-
-    @Query("UPDATE memories SET notifiedAt = :at WHERE id = :id")
-    suspend fun markNotified(id: Long, at: Long)
-
-    /** Active reminders saved without a time, which would otherwise never fire. */
-    @Query("SELECT * FROM memories WHERE kind = 'REMINDER' AND status = 'ACTIVE' AND dueAt IS NULL")
-    suspend fun remindersWithoutDue(): List<Memory>
-
     @Query("DELETE FROM memories WHERE id = :id")
     suspend fun delete(id: Long)
 

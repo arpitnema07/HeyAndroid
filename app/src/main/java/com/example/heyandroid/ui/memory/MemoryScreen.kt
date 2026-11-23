@@ -79,7 +79,6 @@ import kotlinx.coroutines.launch
 
 private enum class MemoryFilter(val label: String, val kind: MemoryKind?) {
     All("All", null),
-    Reminders("Reminders", MemoryKind.REMINDER),
     Tasks("Tasks", MemoryKind.TASK),
     Progress("Progress", MemoryKind.PROGRESS),
     Items("Items", MemoryKind.ITEM),
@@ -133,10 +132,10 @@ fun MemoryScreen(
 
     val all = results?.map { it.memory } ?: recent
     val items = all.filter { filter.kind == null || it.kind == filter.kind }
-    val dueSoon = if (query.isBlank() && (filter == MemoryFilter.All || filter == MemoryFilter.Reminders)) {
+    val dueSoon = if (query.isBlank() && (filter == MemoryFilter.All || filter == MemoryFilter.Tasks)) {
         val now = System.currentTimeMillis()
         items.filter {
-            it.kind == MemoryKind.REMINDER && it.status == MemoryStatus.ACTIVE &&
+            it.kind == MemoryKind.TASK && it.status == MemoryStatus.ACTIVE &&
                 it.dueAt != null && it.dueAt in (now - 60_000)..(now + 7L * 24 * 60 * 60 * 1000)
         }.sortedBy { it.dueAt }
     } else {
@@ -411,7 +410,6 @@ private fun KindChip(memory: Memory, accent: Color) {
     val label = MemoryFormatter.kindLabel(memory).uppercase(Locale.getDefault())
     val tint = when (memory.kind) {
         MemoryKind.PROGRESS -> Color(0xFF2FD8C5)
-        MemoryKind.REMINDER -> Color(0xFFF5B65C)
         MemoryKind.TASK -> accent
         MemoryKind.ITEM -> Color(0xFF7FC7FF)
         MemoryKind.TRANSACTION -> Color(0xFF9BE38A)

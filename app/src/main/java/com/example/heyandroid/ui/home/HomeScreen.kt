@@ -144,7 +144,10 @@ fun HomeScreen(
                         turnLogDao = turnLogDao,
                         captures = captures,
                         embedded = true,
-                        initialPage = settingsPage
+                        initialPage = settingsPage,
+                        // Back from the settings list returns to the main tab
+                        // instead of leaving the app.
+                        onClose = { tab = HomeTab.Memory }
                     )
                 }
             }

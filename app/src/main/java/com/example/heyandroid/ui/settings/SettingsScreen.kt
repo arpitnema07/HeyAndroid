@@ -1,11 +1,16 @@
 package com.example.heyandroid.ui.settings
 
+import android.app.role.RoleManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,11 +34,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -87,7 +96,7 @@ import kotlinx.coroutines.launch
 enum class SettingsPage(val title: String, val subtitle: String) {
     History("History", "Every conversation, newest first"),
     Log("Log", "Model turns, errors and raw captures"),
-    Assistant("Assistant", "Provider, API key and the model that answers"),
+    Assistant("AI Provider", "Provider, API key and the model that answers"),
     Search("Web search", "Tavily key for live information"),
     Connectors("Connectors", "MCP servers the assistant can call"),
     Tools("Custom tools", "HTTP actions you add yourself"),
@@ -111,6 +120,9 @@ fun SettingsScreen(
     val accent = MaterialTheme.colorScheme.primary
     var page by remember { mutableStateOf(initialPage) }
 
+    // Back pops one level at a time: an open page returns to the menu, and the menu
+    // itself goes wherever settings was opened from. Only one is active at a time.
+    BackHandler(enabled = page != null) { page = null }
     BackHandler(enabled = page == null) { onClose() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -202,6 +214,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(22.dp))
 
                 SettingsGroupLabel("On this phone")
+                DefaultAssistantCard(accent = accent)
+                Spacer(modifier = Modifier.height(10.dp))
                 SettingsMenuRow(
                     icon = R.drawable.ic_copy,
                     page = SettingsPage.SyncPad,
@@ -397,6 +411,9 @@ private fun HistoryPage(
     val accent = MaterialTheme.colorScheme.primary
     var openConversation by remember { mutableStateOf<Conversation?>(null) }
 
+    // An open transcript closes on back before the page itself does.
+    BackHandler(enabled = openConversation != null) { openConversation = null }
+
     BackHandler(enabled = openConversation == null) { onBack() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -426,6 +443,44 @@ private fun HistoryPage(
     }
 }
 
+/**
+ * The trailing action on a secret field: "Paste" while the field is empty, then
+ * "Show"/"Hide". Provider keys are long, and reading the clipboard is allowed
+ * from the foreground, so pasting is one tap instead of a keyboard fight.
+ */
+@Composable
+private fun KeyAccessory(
+    value: String,
+    revealed: Boolean,
+    accent: Color,
+    onToggleReveal: () -> Unit,
+    onPaste: (String) -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    val blank = value.isBlank()
+
+    Text(
+        text = when {
+            blank -> "Paste"
+            revealed -> "Hide"
+            else -> "Show"
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = accent,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable {
+                if (blank) {
+                    val pasted = clipboard.getText()?.text?.trim().orEmpty()
+                    if (pasted.isNotBlank()) onPaste(pasted)
+                } else {
+                    onToggleReveal()
+                }
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
 /** Provider, key, model and how the assistant opens. */
 @Composable
 private fun AssistantPage(onBack: () -> Unit) {
@@ -440,16 +495,39 @@ private fun AssistantPage(onBack: () -> Unit) {
     val provider = config.provider
     var apiKeyDraft by remember(provider) { mutableStateOf(config.apiKey) }
     var modelDraft by remember(provider) { mutableStateOf(config.model) }
+    var baseUrlDraft by remember(provider) { mutableStateOf(config.baseUrl) }
+    val remoteModels by store.remoteModels.collectAsState()
+    var providerMenu by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
+    var refreshingModels by remember { mutableStateOf(false) }
+    var typingModel by remember(provider) { mutableStateOf(false) }
     var revealKey by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var savedFlash by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var statusOk by remember { mutableStateOf(false) }
 
+    // Providers retire model ids without warning (NVIDIA answers 410 Gone,
+    // Gemini 404 "no longer available"), so the first time a provider with a
+    // key is shown, ask its /models route what it actually serves now.
+    LaunchedEffect(provider.id) {
+        if (apiKeyDraft.isBlank() || remoteModels[provider.id] != null) return@LaunchedEffect
+        refreshingModels = true
+        val url = if (provider.isCustom) baseUrlDraft else provider.baseUrl
+        store.refreshModels(provider, apiKeyDraft, url)
+        refreshingModels = false
+    }
+
     fun persist() {
+        if (provider.isCustom) store.setCustomBaseUrl(baseUrlDraft)
         store.setApiKey(provider, apiKeyDraft)
         store.setModel(provider, modelDraft)
-        modelDraft = modelDraft.trim().ifBlank { provider.defaultModel }
+        baseUrlDraft = baseUrlDraft.trim()
+        modelDraft = if (provider.isCustom) {
+            modelDraft.trim()
+        } else {
+            modelDraft.trim().ifBlank { provider.defaultModel }
+        }
         savedFlash = true
         status = null
     }
@@ -461,12 +539,27 @@ private fun AssistantPage(onBack: () -> Unit) {
             status = "Add an API key first"
             return
         }
+        if (provider.isCustom && baseUrlDraft.trim().isBlank()) {
+            statusOk = false
+            status = "Add the endpoint's base URL first"
+            return
+        }
+        if (provider.isCustom && modelDraft.trim().isBlank()) {
+            statusOk = false
+            status = "Add the model id first"
+            return
+        }
         persist()
         keyboard?.hide()
         busy = true
         status = null
         scope.launch {
-            val client = LlmClientFactory.create(provider, key, modelDraft)
+            val client = LlmClientFactory.create(
+                provider = provider,
+                apiKey = key,
+                model = modelDraft.trim(),
+                baseUrl = if (provider.isCustom) baseUrlDraft else provider.baseUrl
+            )
             when (val result = client.complete(
                 messages = listOf(LlmMessage.user("Reply with the single word: ready")),
                 maxTokens = 16
@@ -517,21 +610,82 @@ private fun AssistantPage(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                LlmProvider.entries.forEach { entry ->
-                    ProviderChip(
-                        label = entry.displayName,
-                        selected = entry == provider,
-                        accent = accent,
-                        onClick = {
-                            store.selectProvider(entry)
-                            savedFlash = false
-                            status = null
+            // One card shows which provider is active; the menu switches it.
+            Box {
+                AppCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { providerMenu = true },
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = provider.displayName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AppColors.TextPrimary
+                            )
+                            Text(
+                                text = if (provider.baseUrl.isBlank()) {
+                                    "Your own OpenAI-compatible endpoint"
+                                } else {
+                                    provider.baseUrl.substringAfter("://")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AppColors.TextTertiary,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
                         }
-                    )
+                        Text(
+                            text = "Change",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = accent,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        Text(
+                            text = "▾",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AppColors.TextSecondary
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = providerMenu,
+                    onDismissRequest = { providerMenu = false }
+                ) {
+                    LlmProvider.entries.forEach { entry ->
+                        val selected = entry == provider
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (selected) {
+                                        "✓  ${entry.displayName}"
+                                    } else {
+                                        entry.displayName
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (selected) {
+                                        FontWeight.SemiBold
+                                    } else {
+                                        FontWeight.Normal
+                                    },
+                                    color = if (selected) accent else AppColors.TextPrimary
+                                )
+                            },
+                            onClick = {
+                                providerMenu = false
+                                if (!selected) {
+                                    store.selectProvider(entry)
+                                    savedFlash = false
+                                    status = null
+                                }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -615,19 +769,21 @@ private fun AssistantPage(onBack: () -> Unit) {
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (revealKey) "Hide" else "Show",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = accent,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { revealKey = !revealKey }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    KeyAccessory(
+                        value = apiKeyDraft,
+                        revealed = revealKey,
+                        accent = accent,
+                        onToggleReveal = { revealKey = !revealKey },
+                        onPaste = {
+                            apiKeyDraft = it
+                            savedFlash = false
+                            status = null
+                        }
                     )
                 }
             }
 
-            Row(
+            if (provider.keyUrl.isNotBlank()) Row(
                 modifier = Modifier.padding(top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -658,35 +814,259 @@ private fun AssistantPage(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            Text(
-                text = "Free models",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = AppColors.TextPrimary
-            )
-            Text(
-                text = "Only models included in the ${provider.displayName} free plan are listed.",
-                style = MaterialTheme.typography.bodySmall,
-                color = AppColors.TextSecondary,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            if (provider.isCustom) {
+                Text(
+                    text = "Endpoint",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Text(
+                    text = "Base URL of any OpenAI-compatible API, usually ending in /v1.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                provider.freeModels.forEach { model ->
-                    FreeModelRow(
-                        label = model.label,
-                        modelId = model.id,
-                        note = model.note,
-                        selected = model.id == modelDraft,
-                        accent = accent,
-                        onClick = {
-                            modelDraft = model.id
-                            store.setModel(provider, model.id)
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    SettingsField(
+                        value = baseUrlDraft,
+                        onValueChange = {
+                            baseUrlDraft = it
                             savedFlash = false
-                            status = null
-                        }
+                        },
+                        placeholder = "https://your-endpoint/v1",
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = AppColors.TextPrimary
+                        ),
+                        keyboardType = KeyboardType.Uri,
+                        cursorColor = accent
                     )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = "Model",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Text(
+                    text = "The model id exactly as the endpoint lists it, e.g. llama-3.3-70b.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    SettingsField(
+                        value = modelDraft,
+                        onValueChange = {
+                            modelDraft = it
+                            savedFlash = false
+                        },
+                        placeholder = "model-id",
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = AppColors.TextPrimary
+                        ),
+                        cursorColor = accent
+                    )
+                }
+            } else {
+                Text(
+                    text = "Model",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Text(
+                    text = "${provider.displayName}'s free models, or any model id you add yourself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (typingModel) {
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        SettingsField(
+                            value = modelDraft,
+                            onValueChange = {
+                                modelDraft = it
+                                savedFlash = false
+                            },
+                            placeholder = "model-id",
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = AppColors.TextPrimary
+                            ),
+                            cursorColor = accent
+                        )
+                    }
+                    Text(
+                        text = "Pick from the list",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = accent,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { typingModel = false }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                } else Box {
+                    AppCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { modelMenu = true },
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = provider.modelLabel(modelDraft),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = AppColors.TextPrimary
+                                )
+                                Text(
+                                    text = modelDraft,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AppColors.TextTertiary,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            Text(
+                                text = "▾",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = AppColors.TextSecondary
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = modelMenu,
+                        onDismissRequest = { modelMenu = false }
+                    ) {
+                        // What the endpoint says this key may call once it has
+                        // been refreshed; the built-in list is only a fallback.
+                        val modelIds = remoteModels[provider.id]
+                            ?: provider.freeModels.map { it.id }
+                        if (modelIds.isEmpty()) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "No models yet — refresh below",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AppColors.TextTertiary
+                                    )
+                                },
+                                enabled = false,
+                                onClick = {}
+                            )
+                        }
+                        modelIds.forEach { id ->
+                            val selected = id == modelDraft
+                            val label = provider.modelLabel(id)
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(
+                                            text = if (selected) "✓  $label" else label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (selected) {
+                                                FontWeight.SemiBold
+                                            } else {
+                                                FontWeight.Normal
+                                            },
+                                            color = if (selected) accent else AppColors.TextPrimary
+                                        )
+                                        if (label != id) {
+                                            Text(
+                                                text = id,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = AppColors.TextTertiary
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    modelMenu = false
+                                    modelDraft = id
+                                    store.setModel(provider, id)
+                                    savedFlash = false
+                                    status = null
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (refreshingModels) {
+                                        "Refreshing…"
+                                    } else {
+                                        "↻ Refresh from endpoint"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = AppColors.TextSecondary
+                                )
+                            },
+                            onClick = {
+                                modelMenu = false
+                                if (refreshingModels) return@DropdownMenuItem
+                                refreshingModels = true
+                                scope.launch {
+                                    val url = if (provider.isCustom) {
+                                        baseUrlDraft
+                                    } else {
+                                        provider.baseUrl
+                                    }
+                                    store.refreshModels(provider, apiKeyDraft, url).fold(
+                                        onSuccess = { count ->
+                                            statusOk = true
+                                            status = "$count models available on this key"
+                                        },
+                                        onFailure = { error ->
+                                            statusOk = false
+                                            status = error.message
+                                                ?: "Could not read the model list"
+                                        }
+                                    )
+                                    refreshingModels = false
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "+ Add a model name",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = accent
+                                )
+                            },
+                            onClick = {
+                                modelMenu = false
+                                typingModel = true
+                            }
+                        )
+                    }
                 }
             }
 
@@ -743,6 +1123,111 @@ private fun AssistantPage(onBack: () -> Unit) {
             )
 
             Spacer(modifier = Modifier.height(28.dp))
+        }
+    }
+}
+
+/** True when Android already routes the assistant gesture to this app. */
+private fun holdsAssistantRole(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    val roles = context.getSystemService(RoleManager::class.java) ?: return false
+    return runCatching { roles.isRoleHeld(RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
+}
+
+/**
+ * The phone, not the app, owns the "default assistant" choice. This row asks
+ * Android for that role, which shows the system dialog listing the apps that can
+ * be the assistant; on phones without the role it opens the default-apps screen.
+ */
+@Composable
+private fun DefaultAssistantCard(accent: Color) {
+    val context = LocalContext.current
+    var isDefault by remember { mutableStateOf(holdsAssistantRole(context)) }
+    var status by remember { mutableStateOf<String?>(null) }
+
+    val roleRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        isDefault = holdsAssistantRole(context)
+        status = if (isDefault) {
+            "HeyAndroid is your phone's assistant now."
+        } else {
+            "Nothing was changed. This is the only place Android lets it be set."
+        }
+    }
+
+    fun openAssistantSettings() {
+        val roles = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.getSystemService(RoleManager::class.java)
+        } else {
+            null
+        }
+        val available = roles != null &&
+            runCatching { roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
+        if (available) {
+            runCatching { roleRequest.launch(roles!!.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT)) }
+                .onFailure { status = "Android refused to open the assistant picker." }
+            return
+        }
+
+        val fallback = listOf(
+            Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
+            Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS)
+        ).firstOrNull { intent ->
+            runCatching {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.packageManager.resolveActivity(intent, 0) != null
+            }.getOrDefault(false)
+        }
+        if (fallback == null) {
+            status = "This phone has no assistant settings screen."
+            return
+        }
+        runCatching { context.startActivity(fallback) }
+            .onFailure { status = "The assistant settings could not be opened." }
+    }
+
+    AppCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { openAssistantSettings() },
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Default assistant",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Text(
+                    text = if (isDefault) {
+                        "HeyAndroid answers the assistant gesture"
+                    } else {
+                        "Choose HeyAndroid in the phone's assistant settings"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDefault) accent else AppColors.TextTertiary,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+            Text(
+                text = "Open",
+                style = MaterialTheme.typography.labelMedium,
+                color = accent
+            )
+        }
+
+        status?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.labelSmall,
+                color = AppColors.TextTertiary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 }
@@ -809,14 +1294,12 @@ private fun SearchPage(onBack: () -> Unit) {
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (revealTavily) "Hide" else "Show",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = accent,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { revealTavily = !revealTavily }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    KeyAccessory(
+                        value = tavilyDraft,
+                        revealed = revealTavily,
+                        accent = accent,
+                        onToggleReveal = { revealTavily = !revealTavily },
+                        onPaste = { tavilyDraft = it }
                     )
                 }
             }
@@ -1060,14 +1543,15 @@ private fun SyncPadPage(onBack: () -> Unit) {
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = if (revealSyncpadKey) "Hide" else "Show",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { revealSyncpadKey = !revealSyncpadKey }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        KeyAccessory(
+                            value = syncpadKeyDraft,
+                            revealed = revealSyncpadKey,
+                            accent = accent,
+                            onToggleReveal = { revealSyncpadKey = !revealSyncpadKey },
+                            onPaste = {
+                                syncpadKeyDraft = it
+                                syncpadStatus = null
+                            }
                         )
                     }
                 }
@@ -1181,65 +1665,6 @@ private fun ProviderChip(
     }
 }
 
-@Composable
-private fun FreeModelRow(
-    label: String,
-    modelId: String,
-    note: String,
-    selected: Boolean,
-    accent: Color,
-    onClick: () -> Unit
-) {
-    AppCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = AppColors.TextPrimary
-                )
-                Text(
-                    text = modelId,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AppColors.TextTertiary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                Text(
-                    text = note,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AppColors.TextSecondary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) accent else AppColors.SurfaceRaised),
-                contentAlignment = Alignment.Center
-            ) {
-                if (selected) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onPrimary)
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun SettingsField(

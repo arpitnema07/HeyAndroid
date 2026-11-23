@@ -31,20 +31,21 @@ class SaveMemoryTool @Inject constructor(
 
     override val description =
         "Save something to the user's long-term memory on this device: a fact, task, " +
-            "reminder, list item, progress in something they are watching, reading or " +
-            "playing, or a transaction. Reuse the subject of an existing memory to " +
-            "update it instead of creating a duplicate."
+            "list item, progress in something they are watching, reading or playing, or " +
+            "a transaction. Reuse the subject of an existing memory to update it instead " +
+            "of creating a duplicate. Never use it for a request to be reminded: call " +
+            "set_alarm for that."
 
     override val parametersJson = stringParameters(
         required = mapOf("title" to "Short label, under 60 characters"),
         optional = mapOf(
             "content" to "Details worth keeping; for a list, the complete list",
-            "kind" to "FACT, TASK, REMINDER, ITEM, PROGRESS, NOTE or TRANSACTION",
+            "kind" to "FACT, TASK, ITEM, PROGRESS, NOTE or TRANSACTION",
             "subject" to "Stable lowercase key, e.g. \"breaking bad\"",
             "collection" to "watching, reading, listening, shopping or ideas",
             "progress" to "Current position, e.g. S1E2 or page 120",
-            "dueAt" to "Required for kind=REMINDER and kind=TASK: local date and time, " +
-                "YYYY-MM-DDTHH:mm. Never set it for FACT, NOTE, ITEM, PROGRESS or TRANSACTION."
+            "dueAt" to "Required for kind=TASK: local date and time, YYYY-MM-DDTHH:mm. " +
+                "Never set it for FACT, NOTE, ITEM, PROGRESS or TRANSACTION."
         )
     )
 
@@ -129,7 +130,7 @@ class SearchMemoryTool @Inject constructor(
 
     override val description =
         "Search the user's saved memories, including what they are watching, reading " +
-            "or listening to, their reminders and their notes. Returns each match with " +
+            "or listening to, their tasks and their notes. Returns each match with " +
             "its id and recent timeline. Use it before answering any question about the " +
             "user's own life, plans or progress."
 
@@ -165,7 +166,7 @@ class ListMemoriesTool @Inject constructor(
 
     override val parametersJson = stringParameters(
         optional = mapOf(
-            "kind" to "Optional filter: FACT, TASK, REMINDER, ITEM, PROGRESS, NOTE or TRANSACTION",
+            "kind" to "Optional filter: FACT, TASK, ITEM, PROGRESS, NOTE or TRANSACTION",
             "limit" to "How many memories to return, 1 to 40 (default 12)"
         )
     )

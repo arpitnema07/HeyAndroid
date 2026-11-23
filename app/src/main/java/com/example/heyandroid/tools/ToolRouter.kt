@@ -81,11 +81,15 @@ class ToolRouter @Inject constructor(private val registry: ToolRegistry) {
                 "note", "notes", "add to my note", "remove from my note", "strike"
             ),
             "start_call" to listOf("call ", "call my", "phone", "dial", "ring up"),
+            "search_contacts" to listOf(
+                "contact", "contacts", "phone number", "number of", "number for"
+            ),
             "add_calendar_event" to listOf(
                 "calendar", "event", "meeting", "appointment", "schedule"
             ),
             "set_alarm" to listOf(
-                "alarm", "wake me", "timer", "clock", "countdown", "remind me at"
+                "alarm", "wake me", "timer", "clock", "countdown", "remind",
+                "reminder", "stopwatch", "stop watch"
             ),
             "mcp_call" to listOf(
                 "mcp", "gmail", "google drive", "google docs", "sheets", "workspace",

@@ -21,7 +21,9 @@ enum class LlmProvider(
     val freeModels: List<LlmModel>,
     val keyHint: String,
     val keyUrl: String,
-    val freeTierNote: String
+    val freeTierNote: String,
+    /** True for the entry whose URL, key and model the user types in themselves. */
+    val isCustom: Boolean = false
 ) {
     GROQ(
         id = "groq",
@@ -69,14 +71,102 @@ enum class LlmProvider(
                 "Gemini 3.5 Flash-Lite",
                 "Fastest, highest free quota",
                 supportsImages = true
+            ),
+            LlmModel(
+                "gemini-flash-latest",
+                "Gemini Flash (latest)",
+                "Alias that follows whatever Flash is current",
+                supportsImages = true
             )
         ),
         keyHint = "AIza…",
         keyUrl = "aistudio.google.com/apikey",
         freeTierNote = "Free tier · rate limits are per project, shown in Google AI Studio"
+    ),
+
+    /**
+     * An OpenAI-compatible gateway in front of every major model vendor. The free
+     * tier is a standing set of models whose ids end in `:free`; everything else
+     * draws on the pay-as-you-go balance, so only the free ids are listed here.
+     */
+    TOKEN_HARBOR(
+        id = "tokenharbor",
+        displayName = "Token Harbor",
+        baseUrl = "https://tokenharbor.ai/v1",
+        freeModels = listOf(
+            LlmModel(
+                "mimo-v2.6-flash:free",
+                "MiMo V2.6 Flash",
+                "Free tier · 1M context"
+            ),
+            LlmModel(
+                "deepseek-v4.1-flash:free",
+                "DeepSeek V4.1 Flash",
+                "Free tier · 1M context"
+            )
+        ),
+        keyHint = "thk_live_…",
+        keyUrl = "tokenharbor.ai/dashboard/api-keys",
+        freeTierNote = "Free tier · model ids ending in :free never charge the balance"
+    ),
+
+    /**
+     * NVIDIA's hosted NIM catalog. Keys come from a free NVIDIA Developer Program
+     * account and every hosted endpoint is free to prototype with, rate limited per
+     * account rather than billed per token.
+     */
+    NVIDIA(
+        id = "nvidia",
+        displayName = "NVIDIA",
+        baseUrl = "https://integrate.api.nvidia.com/v1",
+        // Only ids that /v1/models still returns; NVIDIA retires old ones and
+        // answers 410 Gone for them, so the built-in list is a fallback and the
+        // settings page can refresh the endpoint's own catalogue.
+        freeModels = listOf(
+            LlmModel(
+                "nvidia/nemotron-3.5-bolt-e4b",
+                "Nemotron 3.5 Bolt",
+                "Compact · tool calling and agentic chat"
+            ),
+            LlmModel(
+                "nvidia/nemotron-3-ultra-550b-a55b",
+                "Nemotron 3 Ultra",
+                "Strongest · 1M context, tool calling"
+            ),
+            LlmModel(
+                "nvidia/nemotron-3.5-super-vl-120b-a12b",
+                "Nemotron 3.5 Super VL",
+                "Reasoning · tools, reads images",
+                supportsImages = true
+            ),
+            LlmModel(
+                "z-ai/glm-5.3-flash",
+                "GLM 5.3 Flash",
+                "Fast · multimodal, tool calling"
+            )
+        ),
+        keyHint = "nvapi-…",
+        keyUrl = "build.nvidia.com/settings/api-keys",
+        freeTierNote = "Free developer endpoints · about 40 requests/min per account"
+    ),
+
+    /**
+     * Any other OpenAI-compatible endpoint: the user pastes its base URL, key and a
+     * model id. Nothing is validated against a catalog, because the app cannot know
+     * what the endpoint serves.
+     */
+    CUSTOM(
+        id = "custom",
+        displayName = "Custom",
+        baseUrl = "",
+        freeModels = emptyList(),
+        keyHint = "API key",
+        keyUrl = "",
+        freeTierNote = "Your own OpenAI-compatible endpoint: base URL, key and model",
+        isCustom = true
     );
 
-    val defaultModel: String get() = freeModels.first().id
+    val defaultModel: String get() = freeModels.firstOrNull()?.id.orEmpty()
 
     /** Free model used for photo questions, or null when none of them is multimodal. */
     val visionModel: String? get() = freeModels.firstOrNull { it.supportsImages }?.id

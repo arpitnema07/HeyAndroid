@@ -18,7 +18,6 @@ import androidx.room.PrimaryKey
 enum class MemoryKind(val needsDue: Boolean) {
     FACT(false),
     TASK(true),
-    REMINDER(true),
     ITEM(false),
     PROGRESS(false),
     NOTE(false),
@@ -40,9 +39,9 @@ enum class MemorySource {
 }
 
 /**
- * One thing the user asked the app to remember: a fact, a task, a reminder, an
- * item on a list, or the current position in something they are watching, reading
- * or playing. [subject] is the stable key used to update it later ("breaking bad").
+ * One thing the user asked the app to remember: a fact, a task, an item on a
+ * list, or the current position in something they are watching, reading or
+ * playing. [subject] is the stable key used to update it later ("breaking bad").
  *
  * [imagePath] points at a private copy of an attached photo/screenshot in the
  * app's files directory, and [imageName] is the unique file name, kept separately
@@ -71,7 +70,7 @@ data class Memory(
     val status: MemoryStatus = MemoryStatus.ACTIVE,
     val dueAt: Long? = null,
     val source: MemorySource = MemorySource.VOICE,
-    /** Set once a due reminder has been notified, so it is not repeated. */
+    /** Kept from the old reminder notifications; nothing writes it any more. */
     val notifiedAt: Long? = null,
     /** Absolute path of the first attached image, kept for older rows. */
     val imagePath: String? = null,

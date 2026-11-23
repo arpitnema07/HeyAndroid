@@ -18,6 +18,7 @@ import com.example.heyandroid.memory.IngestResult
 import com.example.heyandroid.memory.MemoryEngine
 import com.example.heyandroid.memory.MemoryIntent
 import com.example.heyandroid.memory.MemoryText
+import com.example.heyandroid.tools.CallChoiceStore
 import com.example.heyandroid.tools.ToolRouter
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,7 @@ class ChatSession(
     private val memoryEngine: MemoryEngine,
     private val toolRouter: ToolRouter,
     private val turnLogDao: TurnLogDao,
+    private val callChoices: CallChoiceStore,
     private val scope: CoroutineScope
 ) {
     private val _conversationId = MutableStateFlow(0L)
@@ -93,6 +95,7 @@ class ChatSession(
     /** Every assistant invocation starts a fresh conversation. */
     fun startNewConversation() {
         cancel()
+        callChoices.clear()
         val ready = CompletableDeferred<Long>()
         conversationReady = ready
         _conversationId.value = 0L
@@ -116,6 +119,39 @@ class ChatSession(
         val trimmed = text.trim()
         if (trimmed.isEmpty() && imageDataUrl == null) return
         if (sendJob?.isActive == true) return
+
+        // A call is on its countdown: "cancel" or "stop" calls it off, and nothing
+        // reaches the model while the seconds tick.
+        if (imageDataUrl == null && callChoices.pending.value != null &&
+            trimmed.split(' ').size <= 4 &&
+            CANCEL_WORDS.containsMatchIn(trimmed.lowercase())
+        ) {
+            cancelPendingCall()
+            return
+        }
+
+        // "Call Mom" is resolved here, against the real contacts, so the options and
+        // the countdown never depend on the model choosing the right tool.
+        if (imageDataUrl == null && CallChoiceStore.looksLikeCall(trimmed)) {
+            val reply = runCatching { callChoices.handleLocally(trimmed) }.getOrNull()
+            if (reply != null) {
+                recordLocally(trimmed, reply)
+                return
+            }
+        }
+
+        // "1" or "the second one" answers the contact options on screen; that is a
+        // local dial, so no model turn is spent on it.
+        if (imageDataUrl == null && trimmed.split(' ').size <= 3) {
+            val pending = callChoices.choices.value
+            val index = if (pending.isEmpty()) null else CallChoiceStore.indexOf(trimmed)
+            if (index != null && index < pending.size) {
+                chooseCall(index)
+                return
+            }
+        }
+        // Anything else moves the conversation on, so the old options are withdrawn.
+        callChoices.clear()
 
         sendJob = scope.launch {
             _thinking.value = true
@@ -217,6 +253,48 @@ class ChatSession(
                 _thinking.value = false
                 turnFinished.tryEmit(Unit)
             }
+        }
+    }
+
+    /**
+     * Takes one of the pending contact options. The tap on a row and an ordinal
+     * reply both land here; the call itself waits in the confirmation countdown.
+     */
+    fun chooseCall(index: Int) {
+        val pending = callChoices.choices.value
+        val chosen = pending.getOrNull(index) ?: return
+        callChoices.confirmCall(chosen.name, chosen.number)
+        recordLocally("Call ${chosen.name}", null)
+    }
+
+    /** Stops a pending call and leaves a short note in the conversation. */
+    fun cancelPendingCall() {
+        if (callChoices.cancelCall()) recordLocally("Cancel", "Call cancelled.")
+    }
+
+    /** Writes a turn that needs no model: the user's line and an optional reply. */
+    private fun recordLocally(userText: String, reply: String?) {
+        scope.launch {
+            val conversationId = conversationReady.await()
+            if (conversationId == 0L) return@launch
+            messageDao.insert(
+                Message(
+                    conversationId = conversationId,
+                    role = MessageRole.USER,
+                    content = userText
+                )
+            )
+            if (reply != null) {
+                messageDao.insert(
+                    Message(
+                        conversationId = conversationId,
+                        role = MessageRole.ASSISTANT,
+                        content = reply
+                    )
+                )
+            }
+            refreshConversationMeta(conversationId)
+            turnFinished.tryEmit(Unit)
         }
     }
 
@@ -440,6 +518,11 @@ class ChatSession(
 
     private companion object {
         const val HISTORY_LIMIT = 20
+
+        /** Said while a call is counting down, these stop it. */
+        val CANCEL_WORDS = Regex(
+            "\\b(cancel|stop|abort|no|don't|dont|never mind|nevermind|hold on|wait)\\b"
+        )
         const val LOG_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
 
         val SYSTEM_PROMPT =
@@ -449,7 +532,7 @@ class ChatSession(
                 "chat: your reply is shown on screen, never spoken. Call save_memory when " +
                 "the user shares something worth keeping (for a note that already exists, " +
                 "use edit_note instead), search_memory or list_memories " +
-                "before answering questions about their own lists, reminders, spending or " +
+                "before answering questions about their own lists, tasks, spending or " +
                 "progress, and update_memory to move something forward. Use the id shown in " +
                 "search results instead of guessing one. If you do not know something, are " +
                 "not sure, or your information may be out of date, call web_search before " +
@@ -458,9 +541,12 @@ class ChatSession(
                 "weather, scores, releases. If it reports that web search is off, answer " +
                 "from what you know and say the answer is not live. When a photo or screenshot is " +
                 "attached, read it and use the details. Call start_call to phone someone, " +
-                "add_calendar_event to put something in the calendar, and set_alarm for an " +
-                "alarm or a timer: each opens the matching system app with the details " +
-                "filled in, so say the user finishes it there. edit_note changes one note " +
+                "add_calendar_event to put something in the calendar, and set_alarm for " +
+                "every request to be reminded (with a date it sets a clock alarm when that " +
+                "date is within the next seven days, and opens the calendar for the event " +
+                "when it is further out), for an alarm and for a timer. A reminder is never " +
+                "a memory: do not call save_memory for one. Each of these opens the matching " +
+                "system app with the details filled in, so say the user finishes it there. edit_note changes one note " +
                 "item by item - add, correct, remove, or delete the note - so use it instead " +
                 "of saving a second note. mcp_call reaches the user's connected MCP server " +
                 "(Gmail, Calendar, Drive, Docs) when they ask about their own mail or files. " +

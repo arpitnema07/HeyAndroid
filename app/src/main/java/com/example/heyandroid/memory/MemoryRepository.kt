@@ -89,21 +89,7 @@ class MemoryRepository @Inject constructor(
         memories.delete(memoryId)
     }
 
-    suspend fun markNotified(memoryId: Long) = withContext(Dispatchers.IO) {
-        memories.markNotified(memoryId, System.currentTimeMillis())
-    }
-
-    suspend fun dueReminders(now: Long = System.currentTimeMillis()): List<Memory> =
-        withContext(Dispatchers.IO) { memories.dueReminders(now) }
-
-    suspend fun upcoming(withinMillis: Long, now: Long = System.currentTimeMillis()): List<Memory> =
-        withContext(Dispatchers.IO) { memories.dueBetween(now, now + withinMillis) }
-
     suspend fun activeCount(): Int = withContext(Dispatchers.IO) { memories.activeCount() }
-
-    suspend fun unscheduledReminders(): List<Memory> = withContext(Dispatchers.IO) {
-        memories.remindersWithoutDue()
-    }
 
     suspend fun timeline(memoryId: Long, limit: Int = 12): List<MemoryEvent> =
         withContext(Dispatchers.IO) {
@@ -174,7 +160,7 @@ class MemoryRepository @Inject constructor(
 
     private fun kindFamily(kind: MemoryKind): String = when (kind) {
         MemoryKind.PROGRESS, MemoryKind.ITEM, MemoryKind.NOTE, MemoryKind.FACT -> "thing"
-        MemoryKind.TASK, MemoryKind.REMINDER -> "task"
+        MemoryKind.TASK -> "task"
         MemoryKind.TRANSACTION -> "transaction"
     }
 
@@ -199,7 +185,6 @@ object MemoryFormatter {
 
     fun kindLabel(memory: Memory): String = when (memory.kind) {
         MemoryKind.PROGRESS -> if (memory.collection.isNotBlank()) memory.collection else "progress"
-        MemoryKind.REMINDER -> "reminder"
         MemoryKind.TASK -> "task"
         MemoryKind.ITEM -> "item"
         MemoryKind.NOTE -> "note"

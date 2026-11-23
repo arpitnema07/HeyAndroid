@@ -22,7 +22,11 @@ class OpenAiCompatibleClient(
     override val provider: LlmProvider,
     private val baseUrl: String,
     private val apiKey: String,
-    private val model: String
+    private val model: String,
+    /** How long one answer may take before the socket gives up. */
+    private val readTimeoutMs: Long = 60_000L,
+    /** In-model retries; the failover ladder passes 0 and counts on its own retry. */
+    private val maxRetries: Int = MAX_RETRIES
 ) : LlmClient {
 
     override suspend fun complete(messages: List<LlmMessage>, maxTokens: Int): LlmResult =
@@ -74,7 +78,7 @@ class OpenAiCompatibleClient(
         }
 
         var lastFailure: LlmResult.Failure? = null
-        for (attempt in 0..MAX_RETRIES) {
+        for (attempt in 0..maxRetries) {
             if (attempt > 0) delay(RETRY_BASE_MS * (1L shl (attempt - 1)))
             gate()
             var retryAfterMs: Long? = null
@@ -85,7 +89,7 @@ class OpenAiCompatibleClient(
                     .apply {
                         requestMethod = "POST"
                         connectTimeout = 15_000
-                        readTimeout = 60_000
+                        readTimeout = readTimeoutMs.toInt()
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json")
                         setRequestProperty("Authorization", "Bearer $apiKey")
@@ -264,12 +268,21 @@ class OpenAiCompatibleClient(
 }
 
 object LlmClientFactory {
-    fun create(provider: LlmProvider, apiKey: String, model: String): LlmClient {
+    fun create(
+        provider: LlmProvider,
+        apiKey: String,
+        model: String,
+        baseUrl: String = provider.baseUrl,
+        readTimeoutMs: Long = 60_000L,
+        maxRetries: Int = 3
+    ): LlmClient {
         return OpenAiCompatibleClient(
             provider = provider,
-            baseUrl = provider.baseUrl,
+            baseUrl = baseUrl.trim().trimEnd('/').ifBlank { provider.baseUrl },
             apiKey = apiKey,
-            model = model
+            model = model,
+            readTimeoutMs = readTimeoutMs,
+            maxRetries = maxRetries
         )
     }
 }
