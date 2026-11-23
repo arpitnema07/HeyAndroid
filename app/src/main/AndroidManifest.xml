@@ -169,6 +169,28 @@
             </intent-filter>
         </receiver>
 
+        <!-- Recent SyncPad clips. The refresh action goes to a non-exported
+             receiver, so only the widget can trigger a SyncPad request. -->
+        <receiver
+            android:name=".widget.SyncPadWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_syncpad_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_syncpad_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SyncPadWidgetRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.heyandroid.action.SYNCPAD_REFRESH" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager starts through HeyAndroidApp so workers get Hilt dependencies. -->
         <provider
             android:name="androidx.startup.InitializationProvider"

@@ -20,6 +20,7 @@ import com.example.heyandroid.brief.BriefActivity
 import com.example.heyandroid.ui.home.HomeScreen
 import com.example.heyandroid.ui.theme.HeyAndroidTheme
 import com.example.heyandroid.widget.BriefWorker
+import com.example.heyandroid.widget.SyncPadSyncWorker
 import com.example.heyandroid.work.ReminderWorker
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -74,6 +75,11 @@ class MainActivity : ComponentActivity() {
             force = intent?.getBooleanExtra(EXTRA_BUILD_BRIEF, false) == true
         )
 
+        // The SyncPad widget keeps itself current in the background; a launch is
+        // also the moment a stale list is most visible, so sync once here too.
+        SyncPadSyncWorker.schedule(this)
+        SyncPadSyncWorker.enqueue(this)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -106,6 +112,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_TAB = "extra_tab"
         const val TAB_HISTORY = "history"
+        const val TAB_SYNCPAD = "syncpad"
         const val EXTRA_BUILD_BRIEF = "build_brief"
         const val EXTRA_OPEN_BRIEF = "open_brief"
     }

@@ -52,6 +52,7 @@ import com.example.heyandroid.ui.components.AppColors
 import com.example.heyandroid.ui.memory.MemoryScreen
 import com.example.heyandroid.ui.settings.SettingsPage
 import com.example.heyandroid.ui.settings.SettingsScreen
+import com.example.heyandroid.ui.syncpad.SyncPadScreen
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,6 +60,7 @@ import java.util.Locale
 private enum class HomeTab(val label: String, val icon: Int) {
     Memory("Memory", R.drawable.ic_kind_fact),
     Brief("Brief", R.drawable.ic_document),
+    SyncPad("SyncPad", R.drawable.ic_copy),
     Settings("Settings", R.drawable.ic_settings)
 }
 
@@ -88,7 +90,13 @@ fun HomeScreen(
         else -> null
     }
     var tab by remember {
-        mutableStateOf(if (deepLinkPage != null) HomeTab.Settings else HomeTab.Memory)
+        mutableStateOf(
+            when {
+                initialTab == "syncpad" -> HomeTab.SyncPad
+                deepLinkPage != null -> HomeTab.Settings
+                else -> HomeTab.Memory
+            }
+        )
     }
     var settingsPage by remember { mutableStateOf(deepLinkPage) }
 
@@ -123,6 +131,8 @@ fun HomeScreen(
                     )
 
                     HomeTab.Brief -> BriefPage(embedded = true)
+
+                    HomeTab.SyncPad -> SyncPadScreen(accent = AppColors.Accent)
 
                     HomeTab.Settings -> SettingsScreen(
                         conversations = conversations,

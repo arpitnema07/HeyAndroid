@@ -65,6 +65,8 @@ import com.example.heyandroid.llm.LlmMessage
 import com.example.heyandroid.llm.LlmResult
 import com.example.heyandroid.llm.LlmSettingsStore
 import com.example.heyandroid.llm.LlmProvider
+import com.example.heyandroid.syncpad.SyncPadRepository
+import com.example.heyandroid.syncpad.SyncPadSettings
 import com.example.heyandroid.tools.CustomToolStore
 import com.example.heyandroid.ui.components.AppBackground
 import com.example.heyandroid.ui.components.AppColors
@@ -73,6 +75,8 @@ import com.example.heyandroid.ui.history.ConversationTranscript
 import com.example.heyandroid.ui.history.HistoryList
 import com.example.heyandroid.ui.log.LogScreen
 import com.example.heyandroid.widget.BriefWorker
+import com.example.heyandroid.widget.SyncPadSyncWorker
+import com.example.heyandroid.widget.SyncPadWidgetProvider
 import kotlinx.coroutines.launch
 
 /** The pages that used to be tabs, now reached from the settings menu. */
@@ -118,6 +122,18 @@ fun SettingsScreen(
     var tavilyDraft by remember { mutableStateOf(tavilyKey) }
     var revealTavily by remember { mutableStateOf(false) }
 
+    // SyncPad: the server the phone talks to, and the key that authorises it.
+    val syncpad = remember { SyncPadSettings.getInstance(context) }
+    val syncpadRepository = remember { SyncPadRepository.getInstance(context) }
+    val syncpadDomain by syncpad.domain.collectAsState()
+    val syncpadKey by syncpad.apiKey.collectAsState()
+    var syncpadDomainDraft by remember(syncpadDomain) { mutableStateOf(syncpadDomain) }
+    var syncpadKeyDraft by remember(syncpadKey) { mutableStateOf(syncpadKey) }
+    var revealSyncpadKey by remember { mutableStateOf(false) }
+    var syncpadStatus by remember { mutableStateOf<String?>(null) }
+    var syncpadStatusOk by remember { mutableStateOf(false) }
+    var syncpadBusy by remember { mutableStateOf(false) }
+
     val provider = config.provider
 
     fun persist() {
@@ -126,6 +142,41 @@ fun SettingsScreen(
         modelDraft = modelDraft.trim().ifBlank { provider.defaultModel }
         savedFlash = true
         status = null
+    }
+
+    fun saveSyncPad() {
+        syncpad.save(syncpadDomainDraft, syncpadKeyDraft)
+        syncpadDomainDraft = syncpad.domain.value
+        syncpadKeyDraft = syncpad.apiKey.value
+        syncpadStatusOk = true
+        syncpadStatus = "Saved"
+        SyncPadSyncWorker.enqueue(context)
+        SyncPadWidgetProvider.updateAll(context)
+    }
+
+    fun testSyncPad() {
+        if (syncpadDomainDraft.isBlank() || syncpadKeyDraft.isBlank()) {
+            syncpadStatusOk = false
+            syncpadStatus = "Add the SyncPad domain and an API key first"
+            return
+        }
+        saveSyncPad()
+        keyboard?.hide()
+        syncpadBusy = true
+        syncpadStatus = null
+        scope.launch {
+            syncpadRepository.ping().fold(
+                onSuccess = {
+                    syncpadStatusOk = true
+                    syncpadStatus = "Connected · $it"
+                },
+                onFailure = {
+                    syncpadStatusOk = false
+                    syncpadStatus = it.message ?: "Could not reach SyncPad"
+                }
+            )
+            syncpadBusy = false
+        }
     }
 
     fun testConnection() {
@@ -596,6 +647,158 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(26.dp))
 
                 McpConnectorSection(store = store, accent = accent)
+
+                Spacer(modifier = Modifier.height(26.dp))
+
+                Text(
+                    text = "SyncPad",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Text(
+                    text = if (syncpadDomain.isNotBlank() && syncpadKey.isNotBlank()) {
+                        "Connected to ${syncpadDomain.removePrefix("https://")}. The SyncPad " +
+                            "tab and the home-screen widget share your clipboard."
+                    } else {
+                        "Link your SyncPad account to read and add clips. Create a key in " +
+                            "SyncPad → Settings → Device keys."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Column {
+                        SettingsField(
+                            value = syncpadDomainDraft,
+                            onValueChange = {
+                                syncpadDomainDraft = it
+                                syncpadStatus = null
+                            },
+                            placeholder = "syncpad.vercel.app",
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = AppColors.TextPrimary
+                            ),
+                            keyboardType = KeyboardType.Uri,
+                            cursorColor = accent,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SettingsField(
+                                value = syncpadKeyDraft,
+                                onValueChange = {
+                                    syncpadKeyDraft = it
+                                    syncpadStatus = null
+                                },
+                                placeholder = "spk_…",
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = AppColors.TextPrimary,
+                                    letterSpacing = 0.4.sp
+                                ),
+                                visualTransformation = if (revealSyncpadKey) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                keyboardType = KeyboardType.Password,
+                                cursorColor = accent,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (revealSyncpadKey) "Hide" else "Show",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = accent,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { revealSyncpadKey = !revealSyncpadKey }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Domain is the site you open SyncPad on — no trailing slash needed.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AppColors.TextTertiary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+
+                syncpadStatus?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (syncpadStatusOk) accent else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(accent)
+                            .clickable(enabled = !syncpadBusy) { testSyncPad() }
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = if (syncpadBusy) "Testing…" else "Test connection",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(AppColors.SurfaceRaised)
+                            .clickable { saveSyncPad() }
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "Save",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = AppColors.TextPrimary
+                        )
+                    }
+
+                    if (syncpadDomain.isNotBlank() || syncpadKey.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Disconnect",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = AppColors.TextSecondary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    syncpad.clear()
+                                    syncpadDomainDraft = ""
+                                    syncpadKeyDraft = ""
+                                    syncpadStatus = "Disconnected"
+                                    syncpadStatusOk = true
+                                    SyncPadSyncWorker.cancel(context)
+                                    SyncPadWidgetProvider.updateAll(context)
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(26.dp))
 
