@@ -102,6 +102,8 @@ data class SyncPadClip(
         /** Supabase sends `2026-11-23T12:34:56.789+00:00`. */
         private fun parseTime(value: String): Long {
             if (value.isBlank()) return 0L
+            // The cache writes plain epoch millis; the API sends an ISO timestamp.
+            value.trim().toLongOrNull()?.takeIf { it > 1_000_000_000_000L }?.let { return it }
             return runCatching { Instant.parse(value).toEpochMilli() }
                 .recoverCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }
                 .getOrDefault(0L)
