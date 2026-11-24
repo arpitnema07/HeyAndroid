@@ -49,53 +49,15 @@ class LlmAgentFactory @Inject constructor(
     private fun buildLadder(forImages: Boolean): List<ModelTarget> {
         val config = settings.config.value
         if (!config.isConfigured) return emptyList()
-
-        val targets = mutableListOf<ModelTarget>()
-        fun add(provider: LlmProvider, key: String, baseUrl: String, model: String) {
-            if (key.isBlank() || model.isBlank()) return
-            if (forImages && !readsImages(provider, model)) return
-            if (targets.any { it.provider == provider && it.model == model }) return
-            targets += ModelTarget(provider = provider, apiKey = key, baseUrl = baseUrl, model = model)
-        }
-
-        val home = config.provider
-        if (forImages) {
-            home.visionModel?.let { add(home, config.apiKey, config.baseUrl, it) }
-        } else {
-            add(home, config.apiKey, config.baseUrl, config.model)
-        }
-        // The rest of the selected provider: a retired or overloaded id is exactly
-        // what these alternates exist for.
-        settings.knownModels(home).take(MAX_PER_PROVIDER).forEach { model ->
-            add(home, config.apiKey, config.baseUrl, model)
-        }
-
-        // A different vendor that already has a key is the strongest fallback: one
-        // provider's outage cannot take every model down at once.
-        LlmProvider.entries
-            .filter { it != home && !it.isCustom }
-            .forEach { provider ->
-                val key = settings.apiKeyFor(provider)
-                if (key.isBlank()) return@forEach
-                if (forImages) {
-                    provider.visionModel?.let { add(provider, key, provider.baseUrl, it) }
-                    return@forEach
-                }
-                add(provider, key, provider.baseUrl, settings.modelFor(provider))
-                settings.knownModels(provider).take(1).forEach { model ->
-                    add(provider, key, provider.baseUrl, model)
-                }
-            }
-
-        return targets.take(MAX_TARGETS)
-    }
-
-    private fun readsImages(provider: LlmProvider, model: String): Boolean =
-        provider.freeModels.any { it.supportsImages && it.id == model }
-
-    private companion object {
-        /** Saved model plus four alternates: the floor the fallback keeps. */
-        const val MAX_TARGETS = 5
-        const val MAX_PER_PROVIDER = 4
+        return LadderBuilder.build(
+            home = config.provider,
+            apiKey = config.apiKey,
+            baseUrl = config.baseUrl,
+            model = config.model,
+            forImages = forImages,
+            knownModels = settings::knownModels,
+            apiKeyFor = settings::apiKeyFor,
+            modelFor = settings::modelFor
+        )
     }
 }

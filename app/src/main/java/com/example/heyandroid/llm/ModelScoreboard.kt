@@ -12,10 +12,7 @@ import android.content.SharedPreferences
  * back (benched) without being deleted, so it can come back if the provider
  * recovers. Nothing here is uploaded; it is a few counters in app-private prefs.
  */
-class ModelScoreboard private constructor(context: Context) {
-
-    private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("model_scores", Context.MODE_PRIVATE)
+class ModelScoreboard internal constructor(private val prefs: SharedPreferences) {
 
     /** One model's record. [key] is "providerId:modelId". */
     data class Entry(
@@ -126,7 +123,12 @@ class ModelScoreboard private constructor(context: Context) {
 
         fun getInstance(context: Context): ModelScoreboard =
             INSTANCE ?: synchronized(this) {
-                INSTANCE ?: ModelScoreboard(context).also { INSTANCE = it }
+                INSTANCE ?: ModelScoreboard(
+                    context.applicationContext.getSharedPreferences(
+                        "model_scores",
+                        Context.MODE_PRIVATE
+                    )
+                ).also { INSTANCE = it }
             }
     }
 }
