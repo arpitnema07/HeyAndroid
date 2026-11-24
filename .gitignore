@@ -16,3 +16,9 @@ local.properties
 
 # Android Studio workspace metadata
 .idea/
+
+# Kotlin build caches
+.kotlin/
+
+# Real-device screenshots (personal notes, notifications, location)
+/screenshots
